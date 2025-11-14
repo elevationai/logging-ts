@@ -1,7 +1,7 @@
 {
   "name": "@elevationai/logging-ts",
   "author": "William Kapke",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "UNLICENSED",
   "description": "Centralized logging system for CUSS2 applications",
   "exports": "./mod.ts",
