@@ -15,12 +15,12 @@ This library provides a flexible and configurable logging system with support fo
 
 ## Installation
 
-### From GitHub (Raw URL)
+### From JSR
 
 ```json
 {
   "imports": {
-    "logging-ts": "https://raw.githubusercontent.com/elevationai/logging-ts/v1.0.0/mod.ts"
+    "@eai/logging-ts": "jsr:@eai/logging-ts@^1.0.0"
   }
 }
 ```
@@ -30,7 +30,7 @@ This library provides a flexible and configurable logging system with support fo
 ```json
 {
   "imports": {
-    "logging-ts": "../logging-ts/mod.ts"
+    "@eai/logging-ts": "../logging-ts/mod.ts"
   }
 }
 ```
@@ -40,7 +40,7 @@ This library provides a flexible and configurable logging system with support fo
 ### Basic Usage
 
 ```typescript
-import { getLogger } from "logging-ts";
+import { getLogger } from "@eai/logging-ts";
 
 const logger = getLogger();
 logger.info("Application started");
@@ -51,7 +51,7 @@ logger.error("An error occurred");
 ### Module-Specific Loggers
 
 ```typescript
-import { getLogger } from "logging-ts";
+import { getLogger } from "@eai/logging-ts";
 
 const dbLogger = getLogger("database");
 const apiLogger = getLogger("api");
@@ -207,7 +207,7 @@ console.log(modules); // ["database", "api"]
 Dynamically attach a handler to a logger. Useful for streaming logs to SSE clients or adding temporary handlers.
 
 ```typescript
-import { attachHandler, getLogger } from "logging-ts";
+import { attachHandler, getLogger } from "@eai/logging-ts";
 import { ConsoleHandler } from "@std/log";
 
 const customHandler = new ConsoleHandler("DEBUG");
@@ -219,7 +219,7 @@ attachHandler("api", customHandler);
 Dynamically detach a handler from a logger.
 
 ```typescript
-import { detachHandler } from "logging-ts";
+import { detachHandler } from "@eai/logging-ts";
 
 detachHandler("api", customHandler);
 ```
@@ -319,4 +319,4 @@ The library exports the following TypeScript types:
 
 ## License
 
-UNLICENSED - Private/Proprietary
+MIT
