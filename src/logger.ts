@@ -21,12 +21,65 @@ import { sprintf } from "@std/fmt/printf";
 /**
  * FileHandler that flushes immediately after each write
  * Used for critical logs like CORBA-bytes that need to be written before crashes
+ *
+ * This implementation handles large messages (>4KB) safely by writing them directly
+ * to the file, avoiding the fixed-size buffer in the parent FileHandler class.
  */
 class ImmediateFlushFileHandler extends FileHandler {
+  private _largeMessageEncoder = new TextEncoder();
+  // Use 3.5KB threshold to stay safely under the 4KB buffer limit
+  private readonly MAX_BUFFER_SIZE = 3584;
+
   override log(msg: string): void {
-    super.log(msg);
-    // Call the flush() method to write buffered logs immediately
-    this.flush();
+    try {
+      const bytes = this._largeMessageEncoder.encode(msg + "\n");
+
+      // For large messages, write directly to file to avoid buffer overflow
+      if (bytes.byteLength > this.MAX_BUFFER_SIZE) {
+        // Flush any pending buffer content first
+        this.flush();
+
+        // Write large message directly to file
+        // Access protected _file property via type assertion
+        const file = (this as unknown as { _file?: Deno.FsFile })._file;
+        if (file) {
+          let written = 0;
+          while (written < bytes.byteLength) {
+            written += file.writeSync(bytes.subarray(written));
+          }
+          // Sync to disk immediately for critical logs
+          file.syncSync();
+        }
+        return;
+      }
+
+      // For normal-sized messages, use parent's buffered logic
+      super.log(msg);
+      this.flush();
+    }
+    catch (error) {
+      // Fallback: attempt direct write if buffer operations fail
+      // This prevents log loss even if buffer corruption occurs
+      try {
+        const bytes = this._largeMessageEncoder.encode(msg + "\n");
+        this.flush(); // Try to flush any existing buffer content
+
+        const file = (this as unknown as { _file?: Deno.FsFile })._file;
+        if (file) {
+          let written = 0;
+          while (written < bytes.byteLength) {
+            written += file.writeSync(bytes.subarray(written));
+          }
+          file.syncSync();
+        }
+      }
+      catch (fallbackError) {
+        // Last resort: log to console so the error isn't completely lost
+        console.error("[LOGGER FAILURE] Failed to write log message:", error);
+        console.error("[LOGGER FAILURE] Fallback also failed:", fallbackError);
+        console.error("[LOGGER FAILURE] Lost message:", msg.substring(0, 200));
+      }
+    }
   }
 }
 
