@@ -60,6 +60,64 @@ dbLogger.info("Connected to database");
 apiLogger.info("API server started on port 8080");
 ```
 
+### Python-Style sprintf Formatting
+
+The logger supports Python-style printf/sprintf formatting with lazy evaluation for optimal performance:
+
+```typescript
+import { getLogger } from "logging-ts";
+
+const logger = getLogger();
+
+// Simple message (no formatting)
+logger.info("Application started");
+
+// String formatting
+logger.info("User %s logged in", "john");
+
+// Number formatting
+logger.info("Processing %d items", 42);
+
+// Float formatting
+logger.info("Price: $%.2f", 19.99);
+
+// Hex formatting
+logger.debug("Memory address: 0x%x", 255);
+
+// Multiple arguments
+logger.info("User %s (ID: %d) logged in from %s", "alice", 123, "192.168.1.1");
+```
+
+**Performance Benefits - Lazy Evaluation:**
+
+All logger methods implement lazy evaluation - they check the log level BEFORE calling sprintf to format the string. This means if a log level is disabled, the expensive sprintf processing is completely skipped:
+
+```typescript
+// If DEBUG level is disabled, sprintf and JSON.stringify are NEVER called
+logger.debug("Complex data: %s", JSON.stringify(largeObject));
+```
+
+**Automatic Detection:**
+
+The logger automatically detects when format arguments are provided:
+
+- `logger.info("Simple message")` - No formatting, passes through directly
+- `logger.info("User: %s", name)` - sprintf formatting applied
+- `logger.info("Data:", obj)` - Falls back to standard behavior if sprintf fails
+
+**Supported Format Specifiers:**
+
+- `%s` - String
+- `%d` - Integer
+- `%f` - Float (use `%.2f` for 2 decimal places)
+- `%x` - Hexadecimal (lowercase)
+- `%X` - Hexadecimal (uppercase)
+- `%o` - Octal
+- `%b` - Binary
+- `%%` - Literal percent sign
+
+For more format specifiers, see the [@std/fmt documentation](https://jsr.io/@std/fmt/doc/printf/~/sprintf).
+
 ## Configuration
 
 The logger automatically loads configuration from `./configs/logging.jsonc` on first use. If the file doesn't exist, sensible defaults are used.
@@ -178,12 +236,32 @@ The following log levels are supported (from lowest to highest priority):
 
 ## Extended Logger
 
-The `ExtendedLogger` interface includes an additional `warning()` method as an alias for `warn()` for compatibility:
+The `ExtendedLogger` interface extends the standard logger with Python-style sprintf formatting:
+
+### All Methods Support Optional Formatting
+
+All logger methods accept optional format arguments:
+
+```typescript
+logger.debug(msg: string, ...args: unknown[]): void
+logger.info(msg: string, ...args: unknown[]): void
+logger.warn(msg: string, ...args: unknown[]): void
+logger.error(msg: string, ...args: unknown[]): void
+logger.critical(msg: string, ...args: unknown[]): void
+```
+
+### Compatibility Alias
 
 ```typescript
 logger.warn("This is a warning");
 logger.warning("This is also a warning"); // Same as warn()
 ```
+
+**Key Features:**
+
+- **Lazy Evaluation**: sprintf is only called if the log level is enabled
+- **Automatic Detection**: Works with or without format arguments
+- **Graceful Fallback**: Falls back to standard behavior if sprintf fails
 
 ## Features
 
