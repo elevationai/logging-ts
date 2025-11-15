@@ -17,6 +17,9 @@ import {
   setup,
 } from "@std/log";
 import { sprintf } from "@std/fmt/printf";
+import { parse } from "@std/jsonc";
+import { dirname, join, resolve } from "@std/path";
+import type { LoggingConfig } from "./types.ts";
 
 /**
  * FileHandler that flushes immediately after each write
@@ -29,10 +32,6 @@ class ImmediateFlushFileHandler extends FileHandler {
     this.flush();
   }
 }
-
-import type { LoggingConfig } from "./types.ts";
-import { parse } from "@std/jsonc";
-import { dirname, join, resolve } from "@std/path";
 
 // Track if logger has been configured
 let isConfigured = false;

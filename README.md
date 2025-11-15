@@ -84,18 +84,26 @@ logger.info("Price: $%.2f", 19.99);
 // Hex formatting
 logger.debug("Memory address: 0x%x", 255);
 
+// JSON formatting (automatic stringify)
+logger.info("User data: %j", { name: "alice", id: 123 });
+
 // Multiple arguments
 logger.info("User %s (ID: %d) logged in from %s", "alice", 123, "192.168.1.1");
 ```
 
 **Performance Benefits - Lazy Evaluation:**
 
-All logger methods implement lazy evaluation - they check the log level BEFORE calling sprintf to format the string. This means if a log level is disabled, the expensive sprintf processing is completely skipped:
+All logger methods implement lazy evaluation - they check the log level BEFORE calling sprintf to format the string. This means if a log level is disabled, the sprintf processing is completely skipped:
 
 ```typescript
-// If DEBUG level is disabled, sprintf and JSON.stringify are NEVER called
+// Better: use %j formatter instead of JSON.stringify()
+logger.debug("Complex data: %j", largeObject);
+
+// Avoid: JSON.stringify is called even if DEBUG is disabled
 logger.debug("Complex data: %s", JSON.stringify(largeObject));
 ```
+
+**Important:** JavaScript evaluates function arguments before calling the function, so expensive operations like `JSON.stringify()` will execute even if the log level is disabled. Use the `%j` formatter instead, which only stringifies when the log level is enabled.
 
 **Automatic Detection:**
 
@@ -107,16 +115,29 @@ The logger automatically detects when format arguments are provided:
 
 **Supported Format Specifiers:**
 
+**Basic Types:**
 - `%s` - String
-- `%d` - Integer
-- `%f` - Float (use `%.2f` for 2 decimal places)
-- `%x` - Hexadecimal (lowercase)
-- `%X` - Hexadecimal (uppercase)
-- `%o` - Octal
+- `%d` / `%i` - Integer
+- `%f` - Float with decimal point (use `%.2f` for precision)
+- `%e` / `%E` - Scientific notation (lowercase/uppercase)
+- `%g` / `%G` - Adaptive float format (uses %e or %f based on magnitude)
+- `%t` - Boolean (`true` or `false`)
+
+**Number Bases:**
 - `%b` - Binary
+- `%o` - Octal
+- `%x` / `%X` - Hexadecimal (lowercase/uppercase)
+
+**Special Formatters:**
+- `%j` - JSON stringify (useful for objects without manual JSON.stringify)
+- `%v` - Default value format (calls `toString()`)
+- `%T` - Type of value (via `typeof`)
+- `%c` - Character from Unicode codepoint
+
+**Other:**
 - `%%` - Literal percent sign
 
-For more format specifiers, see the [@std/fmt documentation](https://jsr.io/@std/fmt/doc/printf/~/sprintf).
+For more details and advanced formatting options, see the [@std/fmt documentation](https://github.com/denoland/deno_std/blob/main/fmt/printf.ts).
 
 ## Configuration
 
