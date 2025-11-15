@@ -127,7 +127,7 @@ function ensureDirectoryExists(filePath: string): void {
   }
 }
 
-// Extended logger interface with Python-style formatting support
+// Extended logger interface with sprintf formatting support
 export interface ExtendedLogger extends Omit<Logger, "debug" | "info" | "warn" | "error" | "critical"> {
   warning: (msg: string, ...args: unknown[]) => void;
   // Override base methods to support optional sprintf formatting
@@ -139,7 +139,7 @@ export interface ExtendedLogger extends Omit<Logger, "debug" | "info" | "warn" |
 }
 
 /**
- * Create a Python-style logger method with lazy sprintf evaluation
+ * Create a logger method with lazy sprintf evaluation
  */
 function createLogMethod(
   originalMethod: (msg: string, ...args: unknown[]) => void,
@@ -169,7 +169,7 @@ function createLogMethod(
 }
 
 /**
- * Get a logger instance with Python-style sprintf support
+ * Get a logger instance with sprintf support
  * @param name Optional logger name for module-specific configuration
  */
 export function getLogger(name?: string): ExtendedLogger {
@@ -194,7 +194,7 @@ export function getLogger(name?: string): ExtendedLogger {
     // Create extended logger object
     const extLogger = defaultLogger as unknown as ExtendedLogger;
 
-    // Replace methods with Python-style versions
+    // Replace methods with sprintf versions
     extLogger.debug = createLogMethod(origDebug, LogLevels.DEBUG, defaultLogger.level);
     extLogger.info = createLogMethod(origInfo, LogLevels.INFO, defaultLogger.level);
     extLogger.warn = createLogMethod(origWarn, LogLevels.WARN, defaultLogger.level);
@@ -215,7 +215,7 @@ export function getLogger(name?: string): ExtendedLogger {
   // Create extended logger object
   const extLogger = logger as unknown as ExtendedLogger;
 
-  // Replace methods with Python-style versions
+  // Replace methods with sprintf versions
   extLogger.debug = createLogMethod(origDebug, LogLevels.DEBUG, logger.level);
   extLogger.info = createLogMethod(origInfo, LogLevels.INFO, logger.level);
   extLogger.warn = createLogMethod(origWarn, LogLevels.WARN, logger.level);

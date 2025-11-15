@@ -60,9 +60,9 @@ dbLogger.info("Connected to database");
 apiLogger.info("API server started on port 8080");
 ```
 
-### Python-Style sprintf Formatting
+### sprintf Formatting
 
-The logger supports Python-style printf/sprintf formatting with lazy evaluation for optimal performance:
+The logger supports printf/sprintf formatting with lazy evaluation for optimal performance:
 
 ```typescript
 import { getLogger } from "logging-ts";
@@ -236,7 +236,7 @@ The following log levels are supported (from lowest to highest priority):
 
 ## Extended Logger
 
-The `ExtendedLogger` interface extends the standard logger with Python-style sprintf formatting:
+The `ExtendedLogger` interface extends the standard logger with sprintf formatting:
 
 ### All Methods Support Optional Formatting
 
