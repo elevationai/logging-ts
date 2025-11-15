@@ -16,6 +16,7 @@ import {
   type LogRecord,
   setup,
 } from "@std/log";
+import { sprintf } from "@std/fmt/printf";
 
 /**
  * FileHandler that flushes immediately after each write
@@ -126,13 +127,49 @@ function ensureDirectoryExists(filePath: string): void {
   }
 }
 
-// Extended logger interface to add warning method for compatibility
-export interface ExtendedLogger extends Logger {
+// Extended logger interface with sprintf formatting support
+export interface ExtendedLogger extends Omit<Logger, "debug" | "info" | "warn" | "error" | "critical"> {
   warning: (msg: string, ...args: unknown[]) => void;
+  // Override base methods to support optional sprintf formatting
+  debug: (msg: string, ...args: unknown[]) => void;
+  info: (msg: string, ...args: unknown[]) => void;
+  warn: (msg: string, ...args: unknown[]) => void;
+  error: (msg: string, ...args: unknown[]) => void;
+  critical: (msg: string, ...args: unknown[]) => void;
 }
 
 /**
- * Get a logger instance
+ * Create a logger method with lazy sprintf evaluation
+ */
+function createLogMethod(
+  originalMethod: (msg: string, ...args: unknown[]) => void,
+  level: LogLevel,
+  loggerLevel: LogLevel,
+): (msg: string, ...args: unknown[]) => void {
+  return function (this: unknown, msg: string, ...args: unknown[]): void {
+    // Early return if log level is disabled (lazy evaluation)
+    if (loggerLevel > level) return;
+
+    // If no args provided, call original method directly
+    if (args.length === 0) {
+      originalMethod.call(this, msg);
+      return;
+    }
+
+    // Try sprintf formatting with args
+    try {
+      const formatted = sprintf(msg, ...args);
+      originalMethod.call(this, formatted);
+    }
+    catch (_err) {
+      // If sprintf fails, fall back to original behavior (pass args through)
+      originalMethod.call(this, msg, ...args);
+    }
+  };
+}
+
+/**
+ * Get a logger instance with sprintf support
  * @param name Optional logger name for module-specific configuration
  */
 export function getLogger(name?: string): ExtendedLogger {
@@ -146,13 +183,47 @@ export function getLogger(name?: string): ExtendedLogger {
   // If logger has no handlers (unconfigured name), use default logger instead
   if (logger.handlers.length === 0) {
     const defaultLogger = getStdLogger();
-    (defaultLogger as ExtendedLogger).warning = (msg: string, ...args: unknown[]) => defaultLogger.warn(msg, ...args);
-    return defaultLogger as ExtendedLogger;
+
+    // Store original methods
+    const origDebug = defaultLogger.debug.bind(defaultLogger);
+    const origInfo = defaultLogger.info.bind(defaultLogger);
+    const origWarn = defaultLogger.warn.bind(defaultLogger);
+    const origError = defaultLogger.error.bind(defaultLogger);
+    const origCritical = defaultLogger.critical.bind(defaultLogger);
+
+    // Create extended logger object
+    const extLogger = defaultLogger as unknown as ExtendedLogger;
+
+    // Replace methods with sprintf versions
+    extLogger.debug = createLogMethod(origDebug, LogLevels.DEBUG, defaultLogger.level);
+    extLogger.info = createLogMethod(origInfo, LogLevels.INFO, defaultLogger.level);
+    extLogger.warn = createLogMethod(origWarn, LogLevels.WARN, defaultLogger.level);
+    extLogger.error = createLogMethod(origError, LogLevels.ERROR, defaultLogger.level);
+    extLogger.critical = createLogMethod(origCritical, LogLevels.CRITICAL, defaultLogger.level);
+    extLogger.warning = extLogger.warn; // Alias for compatibility
+
+    return extLogger;
   }
 
-  // Add warning as an alias for warn for compatibility
-  (logger as ExtendedLogger).warning = (msg: string, ...args: unknown[]) => logger.warn(msg, ...args);
-  return logger as ExtendedLogger;
+  // Store original methods
+  const origDebug = logger.debug.bind(logger);
+  const origInfo = logger.info.bind(logger);
+  const origWarn = logger.warn.bind(logger);
+  const origError = logger.error.bind(logger);
+  const origCritical = logger.critical.bind(logger);
+
+  // Create extended logger object
+  const extLogger = logger as unknown as ExtendedLogger;
+
+  // Replace methods with sprintf versions
+  extLogger.debug = createLogMethod(origDebug, LogLevels.DEBUG, logger.level);
+  extLogger.info = createLogMethod(origInfo, LogLevels.INFO, logger.level);
+  extLogger.warn = createLogMethod(origWarn, LogLevels.WARN, logger.level);
+  extLogger.error = createLogMethod(origError, LogLevels.ERROR, logger.level);
+  extLogger.critical = createLogMethod(origCritical, LogLevels.CRITICAL, logger.level);
+  extLogger.warning = extLogger.warn; // Alias for compatibility
+
+  return extLogger;
 }
 
 /**
