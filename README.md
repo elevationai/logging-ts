@@ -116,6 +116,7 @@ The logger automatically detects when format arguments are provided:
 **Supported Format Specifiers:**
 
 **Basic Types:**
+
 - `%s` - String
 - `%d` / `%i` - Integer
 - `%f` - Float with decimal point (use `%.2f` for precision)
@@ -124,17 +125,20 @@ The logger automatically detects when format arguments are provided:
 - `%t` - Boolean (`true` or `false`)
 
 **Number Bases:**
+
 - `%b` - Binary
 - `%o` - Octal
 - `%x` / `%X` - Hexadecimal (lowercase/uppercase)
 
 **Special Formatters:**
+
 - `%j` - JSON stringify (useful for objects without manual JSON.stringify)
 - `%v` - Default value format (calls `toString()`)
 - `%T` - Type of value (via `typeof`)
 - `%c` - Character from Unicode codepoint
 
 **Other:**
+
 - `%%` - Literal percent sign
 
 For more details and advanced formatting options, see the [@std/fmt documentation](https://github.com/denoland/deno_std/blob/main/fmt/printf.ts).
