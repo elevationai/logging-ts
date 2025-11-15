@@ -1,7 +1,7 @@
 {
   "name": "@eai/logging-ts",
   "author": "William Kapke",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "license": "MIT",
   "description": "Centralized logging system for CUSS2 applications",
   "exports": "./mod.ts",
