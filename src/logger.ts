@@ -234,14 +234,7 @@ function ensureDirectoryExists(filePath: string): void {
   }
 }
 
-<<<<<<< HEAD
-/**
- * Extended logger interface with Python-style sprintf formatting support
- * Includes custom hex formatters for binary data logging
- */
-=======
 // Extended logger interface with sprintf formatting support
->>>>>>> bug/overflow
 export interface ExtendedLogger extends Omit<Logger, "debug" | "info" | "warn" | "error" | "critical"> {
   /**
    * Alias for warn() for compatibility
@@ -305,12 +298,7 @@ export interface ExtendedLogger extends Omit<Logger, "debug" | "info" | "warn" |
 }
 
 /**
-<<<<<<< HEAD
- * Create a Python-style logger method with lazy sprintf evaluation
- * Supports custom hex formatters: %h (compact) and %H (spaced)
-=======
  * Create a logger method with lazy sprintf evaluation
->>>>>>> bug/overflow
  */
 function createLogMethod(
   originalMethod: (msg: string, ...args: unknown[]) => void,
