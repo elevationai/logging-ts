@@ -118,7 +118,7 @@ Deno.test("hex formatters - realistic CORBA scenario", () => {
     "CORBA ID: %h, Header: %.64h, Payload: %.1024h",
     messageId,
     header,
-    payload
+    payload,
   );
   assertExists(logger);
 });
