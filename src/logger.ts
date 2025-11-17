@@ -17,72 +17,6 @@ import {
   setup,
 } from "@std/log";
 import { sprintf } from "@std/fmt/printf";
-
-/**
- * FileHandler that flushes immediately after each write
- * Used for critical logs like CORBA-bytes that need to be written before crashes
- *
- * This implementation handles large messages (>4KB) safely by writing them directly
- * to the file, avoiding the fixed-size buffer in the parent FileHandler class.
- */
-class ImmediateFlushFileHandler extends FileHandler {
-  private _largeMessageEncoder = new TextEncoder();
-  // Use 3.5KB threshold to stay safely under the 4KB buffer limit
-  private readonly MAX_BUFFER_SIZE = 3584;
-
-  override log(msg: string): void {
-    try {
-      const bytes = this._largeMessageEncoder.encode(msg + "\n");
-
-      // For large messages, write directly to file to avoid buffer overflow
-      if (bytes.byteLength > this.MAX_BUFFER_SIZE) {
-        // Flush any pending buffer content first
-        this.flush();
-
-        // Write large message directly to file
-        // Access protected _file property via type assertion
-        const file = (this as unknown as { _file?: Deno.FsFile })._file;
-        if (file) {
-          let written = 0;
-          while (written < bytes.byteLength) {
-            written += file.writeSync(bytes.subarray(written));
-          }
-          // Sync to disk immediately for critical logs
-          file.syncSync();
-        }
-        return;
-      }
-
-      // For normal-sized messages, use parent's buffered logic
-      super.log(msg);
-      this.flush();
-    }
-    catch (error) {
-      // Fallback: attempt direct write if buffer operations fail
-      // This prevents log loss even if buffer corruption occurs
-      try {
-        const bytes = this._largeMessageEncoder.encode(msg + "\n");
-        this.flush(); // Try to flush any existing buffer content
-
-        const file = (this as unknown as { _file?: Deno.FsFile })._file;
-        if (file) {
-          let written = 0;
-          while (written < bytes.byteLength) {
-            written += file.writeSync(bytes.subarray(written));
-          }
-          file.syncSync();
-        }
-      }
-      catch (fallbackError) {
-        // Last resort: log to console so the error isn't completely lost
-        console.error("[LOGGER FAILURE] Failed to write log message:", error);
-        console.error("[LOGGER FAILURE] Fallback also failed:", fallbackError);
-        console.error("[LOGGER FAILURE] Lost message:", msg.substring(0, 200));
-      }
-    }
-  }
-}
-
 import type { LoggingConfig } from "./types.ts";
 import { parse } from "@std/jsonc";
 import { dirname, join, resolve } from "@std/path";
@@ -300,10 +234,14 @@ function ensureDirectoryExists(filePath: string): void {
   }
 }
 
+<<<<<<< HEAD
 /**
  * Extended logger interface with Python-style sprintf formatting support
  * Includes custom hex formatters for binary data logging
  */
+=======
+// Extended logger interface with sprintf formatting support
+>>>>>>> bug/overflow
 export interface ExtendedLogger extends Omit<Logger, "debug" | "info" | "warn" | "error" | "critical"> {
   /**
    * Alias for warn() for compatibility
@@ -367,8 +305,12 @@ export interface ExtendedLogger extends Omit<Logger, "debug" | "info" | "warn" |
 }
 
 /**
+<<<<<<< HEAD
  * Create a Python-style logger method with lazy sprintf evaluation
  * Supports custom hex formatters: %h (compact) and %H (spaced)
+=======
+ * Create a logger method with lazy sprintf evaluation
+>>>>>>> bug/overflow
  */
 function createLogMethod(
   originalMethod: (msg: string, ...args: unknown[]) => void,
@@ -400,7 +342,7 @@ function createLogMethod(
 }
 
 /**
- * Get a logger instance with Python-style sprintf support
+ * Get a logger instance with sprintf support
  * @param name Optional logger name for module-specific configuration
  */
 export function getLogger(name?: string): ExtendedLogger {
@@ -425,7 +367,7 @@ export function getLogger(name?: string): ExtendedLogger {
     // Create extended logger object
     const extLogger = defaultLogger as unknown as ExtendedLogger;
 
-    // Replace methods with Python-style versions
+    // Replace methods with sprintf versions
     extLogger.debug = createLogMethod(origDebug, LogLevels.DEBUG, defaultLogger.level);
     extLogger.info = createLogMethod(origInfo, LogLevels.INFO, defaultLogger.level);
     extLogger.warn = createLogMethod(origWarn, LogLevels.WARN, defaultLogger.level);
@@ -446,7 +388,7 @@ export function getLogger(name?: string): ExtendedLogger {
   // Create extended logger object
   const extLogger = logger as unknown as ExtendedLogger;
 
-  // Replace methods with Python-style versions
+  // Replace methods with sprintf versions
   extLogger.debug = createLogMethod(origDebug, LogLevels.DEBUG, logger.level);
   extLogger.info = createLogMethod(origInfo, LogLevels.INFO, logger.level);
   extLogger.warn = createLogMethod(origWarn, LogLevels.WARN, logger.level);
@@ -597,10 +539,11 @@ function setupLoggerSync() {
     const filename = defaultFileConfig.filename || "app.log";
     const filePath = join(dir, filename);
     ensureDirectoryExists(filePath);
-    handlers.file = new ImmediateFlushFileHandler((defaultFileConfig.level as LevelName) || "DEBUG", {
+    handlers.file = new FileHandler((defaultFileConfig.level as LevelName) || "DEBUG", {
       filename: filePath,
       mode: defaultFileConfig.mode || "a",
       formatter: createFileFormatter(),
+      bufferSize: 0, // Immediate writes without buffering
     });
   }
 
@@ -657,10 +600,11 @@ function setupLoggerSync() {
           const fileMode = config.file.mode || "a";
 
           ensureDirectoryExists(filePath);
-          handlers[handlerName] = new ImmediateFlushFileHandler(fileLevel, {
+          handlers[handlerName] = new FileHandler(fileLevel, {
             filename: filePath,
             mode: fileMode,
             formatter: createFileFormatter(),
+            bufferSize: 0, // Immediate writes without buffering
           });
           moduleHandlers.push(handlerName);
 
