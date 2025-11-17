@@ -1,0 +1,145 @@
+# Deno
+.deno/
+# Note: deno.lock is committed for reproducible builds
+
+# Build output
+dist/
+build/
+out/
+lib/
+*.min.js
+*.min.css
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+.sublime-*
+.atom/
+.project
+.settings/
+*.iml
+*.ipr
+*.iws
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies (if any npm tools are used)
+node_modules/
+bower_components/
+
+# Testing
+coverage/
+.nyc_output/
+test-results/
+*.lcov
+.coverage
+*.test.js
+*.test.ts.js
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+.tmp/
+.temp/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+.AppleDouble
+.LSOverride
+Icon?
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+.Trash-*
+.nfs*
+
+# Debug files
+*.map
+*.map.js
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+*~
+
+# Cache
+.cache/
+.parcel-cache/
+.sass-cache/
+*.cache
+
+# TypeScript
+*.tsbuildinfo
+.tsc-cache/
+tsconfig.tsbuildinfo
+
+# Documentation build output
+docs/_build/
+docs/.vitepress/dist/
+documentation/
+api-docs/
+
+# Package files
+*.tar
+*.tar.gz
+*.zip
+*.rar
+*.7z
+
+# Python (if any Python scripts are used)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Misc
+.history/
+.svn/
+.hg/
+.bzr/
+*.pid
+*.seed
+*.pid.lock
