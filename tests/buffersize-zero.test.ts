@@ -3,7 +3,7 @@
  * Validates that the simplified implementation handles all message sizes
  */
 
-import { assertEquals, assertExists } from "@std/assert";
+import { assertExists } from "@std/assert";
 import { getLogger } from "../mod.ts";
 
 Deno.test("bufferSize: 0 - small messages work", () => {
