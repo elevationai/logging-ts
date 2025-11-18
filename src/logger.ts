@@ -17,21 +17,9 @@ import {
   setup,
 } from "@std/log";
 import { sprintf } from "@std/fmt/printf";
+import type { LoggingConfig } from "./types.ts";
 import { parse } from "@std/jsonc";
 import { dirname, join, resolve } from "@std/path";
-import type { LoggingConfig } from "./types.ts";
-
-/**
- * FileHandler that flushes immediately after each write
- * Used for critical logs like CORBA-bytes that need to be written before crashes
- */
-class ImmediateFlushFileHandler extends FileHandler {
-  override log(msg: string): void {
-    super.log(msg);
-    // Call the flush() method to write buffered logs immediately
-    this.flush();
-  }
-}
 
 // Track if logger has been configured
 let isConfigured = false;
@@ -365,10 +353,11 @@ function setupLoggerSync() {
     const filename = defaultFileConfig.filename || "app.log";
     const filePath = join(dir, filename);
     ensureDirectoryExists(filePath);
-    handlers.file = new ImmediateFlushFileHandler((defaultFileConfig.level as LevelName) || "DEBUG", {
+    handlers.file = new FileHandler((defaultFileConfig.level as LevelName) || "DEBUG", {
       filename: filePath,
       mode: defaultFileConfig.mode || "a",
       formatter: createFileFormatter(),
+      bufferSize: 0, // Immediate writes without buffering
     });
   }
 
@@ -425,10 +414,11 @@ function setupLoggerSync() {
           const fileMode = config.file.mode || "a";
 
           ensureDirectoryExists(filePath);
-          handlers[handlerName] = new ImmediateFlushFileHandler(fileLevel, {
+          handlers[handlerName] = new FileHandler(fileLevel, {
             filename: filePath,
             mode: fileMode,
             formatter: createFileFormatter(),
+            bufferSize: 0, // Immediate writes without buffering
           });
           moduleHandlers.push(handlerName);
 
