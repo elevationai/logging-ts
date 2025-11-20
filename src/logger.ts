@@ -21,6 +21,172 @@ import type { LoggingConfig } from "./types.ts";
 import { parse } from "@std/jsonc";
 import { dirname, join, resolve } from "@std/path";
 
+// ===== Hex Formatter Utilities =====
+
+/**
+ * Internal helper to convert byte array to hex string with customizable separator
+ * @param data Uint8Array, ArrayBuffer, or number array
+ * @param maxBytes Optional maximum bytes to output (truncates if exceeded, no limit by default)
+ * @param separator Separator between hex bytes ("" for compact, " " for spaced)
+ * @returns Hex string with specified separator
+ * @throws {TypeError} If data is not a valid byte array type
+ */
+function toHex(
+  data: Uint8Array | ArrayBuffer | number[],
+  maxBytes: number | undefined,
+  separator: string,
+): string {
+  if (!data) {
+    throw new TypeError(
+      `Invalid hex formatter argument: expected Uint8Array, ArrayBuffer, or number[], got ${data}`,
+    );
+  }
+
+  // Convert to Uint8Array
+  let bytes: Uint8Array;
+  try {
+    if (data instanceof ArrayBuffer) {
+      bytes = new Uint8Array(data);
+    }
+    else if (Array.isArray(data)) {
+      bytes = new Uint8Array(data);
+    }
+    else if (data instanceof Uint8Array) {
+      bytes = data;
+    }
+    else {
+      throw new TypeError(
+        `Invalid hex formatter argument: expected Uint8Array, ArrayBuffer, or number[], got ${typeof data}`,
+      );
+    }
+  }
+  catch (error) {
+    if (error instanceof TypeError) throw error;
+    throw new TypeError(
+      `Failed to convert argument to Uint8Array: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  // Truncate if maxBytes specified and exceeded
+  if (maxBytes !== undefined && bytes.length > maxBytes) {
+    const truncated = Array.from(bytes.slice(0, maxBytes))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(separator);
+    const ellipsis = separator ? " ..." : "...";
+    return `${truncated}${ellipsis} [truncated, ${bytes.length - maxBytes} more bytes]`;
+  }
+
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join(separator);
+}
+
+/**
+ * Convert byte array to compact hex string (no spaces)
+ * @param data Uint8Array, ArrayBuffer, or number array
+ * @param maxBytes Optional maximum bytes to output (truncates if exceeded, no limit by default)
+ * @returns Hex string like "deadbeef"
+ * @throws {TypeError} If data is not a valid byte array type
+ */
+function toHexCompact(data: Uint8Array | ArrayBuffer | number[], maxBytes?: number): string {
+  return toHex(data, maxBytes, "");
+}
+
+/**
+ * Convert byte array to spaced hex string (with spaces for readability)
+ * @param data Uint8Array, ArrayBuffer, or number array
+ * @param maxBytes Optional maximum bytes to output (truncates if exceeded, no limit by default)
+ * @returns Hex string like "de ad be ef"
+ * @throws {TypeError} If data is not a valid byte array type
+ */
+function toHexSpaced(data: Uint8Array | ArrayBuffer | number[], maxBytes?: number): string {
+  return toHex(data, maxBytes, " ");
+}
+
+// Cached regex for performance
+const HEX_FORMAT_REGEX = /%([-+0 #]*)(\d+|\*)?(?:\.(\d+|\*))?([hH])/g;
+// Regex to match ALL formatters (to track argument positions)
+const ALL_FORMAT_REGEX = /%([-+0 #]*)(\d+|\*)?(?:\.(\d+|\*))?([diouxXeEfFgGaAcspn%hH])/g;
+
+/**
+ * Preprocess format string to convert %h/%H to %s with hex-converted args
+ * Supports optional precision parameter to control truncation:
+ * - %h or %H: No truncation (full data)
+ * - %.100h or %.100H: Truncate at 100 bytes
+ * - %.1024h or %.1024H: Truncate at 1024 bytes
+ * @param msg Format string potentially containing %h or %H
+ * @param args Arguments to format
+ * @returns Tuple of [processed format string, processed args]
+ */
+function preprocessHexFormatters(msg: string, args: unknown[]): [string, unknown[]] {
+  // Fast path: skip if no hex formatters present (check for 'h' or 'H' after %)
+  if (!(msg.includes("h") || msg.includes("H"))) {
+    return [msg, args];
+  }
+
+  // First, find all formatters to determine argument positions
+  const allFormatters: Array<{ match: string; index: number; isHex: boolean; specifier?: string }> = [];
+  let match;
+  const allRegex = new RegExp(ALL_FORMAT_REGEX);
+  while ((match = allRegex.exec(msg)) !== null) {
+    const specifier = match[4];
+    allFormatters.push({
+      match: match[0],
+      index: match.index,
+      isHex: specifier === "h" || specifier === "H",
+      specifier: specifier,
+    });
+  }
+
+  // Build processed args array with hex conversions at correct positions
+  const processedArgs: unknown[] = [];
+  let formatIndex = 0;
+
+  const processedMsg = msg.replace(HEX_FORMAT_REGEX, (match, flags, width, precision, specifier) => {
+    // Find which formatter index this hex formatter is at
+    const hexFormatterInfo = allFormatters.find((f, i) =>
+      i >= formatIndex && f.isHex && msg.indexOf(f.match, f.index) === msg.indexOf(match, f.index)
+    );
+
+    if (!hexFormatterInfo) return match;
+
+    const argIndex = allFormatters.indexOf(hexFormatterInfo);
+    formatIndex = argIndex + 1;
+
+    if (argIndex >= args.length) {
+      // Not enough args provided
+      return match;
+    }
+
+    const arg = args[argIndex];
+
+    // Parse precision as max bytes (undefined = no limit)
+    const maxBytes = precision ? parseInt(precision, 10) : undefined;
+
+    // Convert to hex (throws TypeError if wrong type)
+    const hexString = specifier === "h"
+      ? toHexCompact(arg as Uint8Array | ArrayBuffer | number[], maxBytes)
+      : toHexSpaced(arg as Uint8Array | ArrayBuffer | number[], maxBytes);
+
+    // Store converted value at the correct position
+    processedArgs[argIndex] = hexString;
+
+    // Replace with %s, preserving any flags/width (but NOT precision since we used it)
+    const flagStr = flags || "";
+    const widthStr = width || "";
+    return `%${flagStr}${widthStr}s`;
+  });
+
+  // Fill in non-hex args at their original positions
+  for (let i = 0; i < args.length; i++) {
+    if (processedArgs[i] === undefined) {
+      processedArgs[i] = args[i];
+    }
+  }
+
+  return [processedMsg, processedArgs];
+}
+
 // Track if logger has been configured
 let isConfigured = false;
 
@@ -116,12 +282,64 @@ function ensureDirectoryExists(filePath: string): void {
 
 // Extended logger interface with sprintf formatting support
 export interface ExtendedLogger extends Omit<Logger, "debug" | "info" | "warn" | "error" | "critical"> {
+  /**
+   * Alias for warn() for compatibility
+   */
   warning: (msg: string, ...args: unknown[]) => void;
-  // Override base methods to support optional sprintf formatting
+
+  /**
+   * Log debug message with sprintf-style formatting
+   * @param msg Format string supporting:
+   *   - Standard: %s (string), %d (number), %f (float), %x (hex number)
+   *   - Custom: %h (compact hex), %H (spaced hex) - no truncation by default
+   *   - Precision: %.100h or %.100H truncates at 100 bytes
+   * @param args Values to format. Hex formatters (%h,%H) accept Uint8Array|ArrayBuffer|number[]
+   * @example
+   *   logger.debug("Data: %h", new Uint8Array([0xde, 0xad, 0xbe, 0xef])); // "Data: deadbeef" (full data)
+   *   logger.debug("Data: %H", new Uint8Array([0xde, 0xad])); // "Data: de ad" (full data)
+   *   logger.debug("Data: %.100h", largeBuffer); // Truncates at 100 bytes
+   *   logger.debug("Buffer %h has %d bytes", buffer, buffer.length); // Mixed formatters
+   */
   debug: (msg: string, ...args: unknown[]) => void;
+
+  /**
+   * Log info message with sprintf-style formatting
+   * @param msg Format string supporting:
+   *   - Standard: %s (string), %d (number), %f (float), %x (hex number)
+   *   - Custom: %h (compact hex), %H (spaced hex) - no truncation by default
+   *   - Precision: %.100h or %.100H truncates at 100 bytes
+   * @param args Values to format. Hex formatters (%h,%H) accept Uint8Array|ArrayBuffer|number[]
+   */
   info: (msg: string, ...args: unknown[]) => void;
+
+  /**
+   * Log warning message with sprintf-style formatting
+   * @param msg Format string supporting:
+   *   - Standard: %s (string), %d (number), %f (float), %x (hex number)
+   *   - Custom: %h (compact hex), %H (spaced hex) - no truncation by default
+   *   - Precision: %.100h or %.100H truncates at 100 bytes
+   * @param args Values to format. Hex formatters (%h,%H) accept Uint8Array|ArrayBuffer|number[]
+   */
   warn: (msg: string, ...args: unknown[]) => void;
+
+  /**
+   * Log error message with sprintf-style formatting
+   * @param msg Format string supporting:
+   *   - Standard: %s (string), %d (number), %f (float), %x (hex number)
+   *   - Custom: %h (compact hex), %H (spaced hex) - no truncation by default
+   *   - Precision: %.100h or %.100H truncates at 100 bytes
+   * @param args Values to format. Hex formatters (%h,%H) accept Uint8Array|ArrayBuffer|number[]
+   */
   error: (msg: string, ...args: unknown[]) => void;
+
+  /**
+   * Log critical message with sprintf-style formatting
+   * @param msg Format string supporting:
+   *   - Standard: %s (string), %d (number), %f (float), %x (hex number)
+   *   - Custom: %h (compact hex), %H (spaced hex) - no truncation by default
+   *   - Precision: %.100h or %.100H truncates at 100 bytes
+   * @param args Values to format. Hex formatters (%h,%H) accept Uint8Array|ArrayBuffer|number[]
+   */
   critical: (msg: string, ...args: unknown[]) => void;
 }
 
@@ -145,11 +363,17 @@ function createLogMethod(
 
     // Try sprintf formatting with args
     try {
-      const formatted = sprintf(msg, ...args);
+      // Preprocess hex formatters (%h, %H) before sprintf
+      const [processedMsg, processedArgs] = preprocessHexFormatters(msg, args);
+      const formatted = sprintf(processedMsg, ...processedArgs);
       originalMethod.call(this, formatted);
     }
-    catch (_err) {
-      // If sprintf fails, fall back to original behavior (pass args through)
+    catch (err) {
+      // Rethrow TypeErrors (programming errors should not be hidden)
+      if (err instanceof TypeError) {
+        throw err;
+      }
+      // If sprintf fails for other reasons, fall back to original behavior (pass args through)
       originalMethod.call(this, msg, ...args);
     }
   };
