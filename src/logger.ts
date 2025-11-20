@@ -117,6 +117,7 @@ function ensureDirectoryExists(filePath: string): void {
 // Extended logger interface with sprintf formatting support
 export interface ExtendedLogger extends Omit<Logger, "debug" | "info" | "warn" | "error" | "critical"> {
   warning: (msg: string, ...args: unknown[]) => void;
+  exception: (error: Error | unknown) => void;
   // Override base methods to support optional sprintf formatting
   debug: (msg: string, ...args: unknown[]) => void;
   info: (msg: string, ...args: unknown[]) => void;
@@ -156,6 +157,33 @@ function createLogMethod(
 }
 
 /**
+ * Create an exception logging method with lazy evaluation
+ */
+function createExceptionMethod(
+  originalErrorMethod: (msg: string, ...args: unknown[]) => void,
+  loggerLevel: LogLevel,
+): (error: Error | unknown) => void {
+  return function (this: unknown, error: Error | unknown): void {
+    // Early return if ERROR level is disabled (lazy evaluation)
+    if (loggerLevel > LogLevels.ERROR) return;
+
+    // Format the error for logging
+    let message: string;
+    if (error instanceof Error) {
+      // Use stack if available (includes name, message, and trace)
+      message = error.stack || `${error.name}: ${error.message}`;
+    }
+    else {
+      // Handle non-Error objects (primitives, objects, etc.)
+      message = `Non-Error exception: ${String(error)}`;
+    }
+
+    // Log using the original error method
+    originalErrorMethod.call(this, message);
+  };
+}
+
+/**
  * Get a logger instance with sprintf support
  * @param name Optional logger name for module-specific configuration
  */
@@ -188,6 +216,7 @@ export function getLogger(name?: string): ExtendedLogger {
     extLogger.error = createLogMethod(origError, LogLevels.ERROR, defaultLogger.level);
     extLogger.critical = createLogMethod(origCritical, LogLevels.CRITICAL, defaultLogger.level);
     extLogger.warning = extLogger.warn; // Alias for compatibility
+    extLogger.exception = createExceptionMethod(origError, defaultLogger.level);
 
     return extLogger;
   }
@@ -209,6 +238,7 @@ export function getLogger(name?: string): ExtendedLogger {
   extLogger.error = createLogMethod(origError, LogLevels.ERROR, logger.level);
   extLogger.critical = createLogMethod(origCritical, LogLevels.CRITICAL, logger.level);
   extLogger.warning = extLogger.warn; // Alias for compatibility
+  extLogger.exception = createExceptionMethod(origError, logger.level);
 
   return extLogger;
 }
