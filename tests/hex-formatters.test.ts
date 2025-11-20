@@ -7,7 +7,7 @@
  * logged to console but not captured due to logger design.
  */
 
-import { assertEquals, assertExists } from "@std/assert";
+import { assertEquals, assertExists, assertThrows } from "@std/assert";
 import { getLogger } from "../mod.ts";
 
 Deno.test("hex formatters - %h with basic Uint8Array", () => {
@@ -117,19 +117,35 @@ Deno.test("hex formatters - both %h and %H in same message", () => {
 Deno.test("hex formatters - null/undefined handling", () => {
   const logger = getLogger("test-null");
 
-  // Should not throw - logs "null" and "undefined"
-  logger.info("Null: %h", null);
-  logger.info("Undefined: %h", undefined);
-  assertExists(logger);
+  // Should throw TypeError for null and undefined (not valid byte arrays)
+  assertThrows(
+    () => logger.info("Null: %h", null),
+    TypeError,
+    "Invalid hex formatter argument",
+  );
+
+  assertThrows(
+    () => logger.info("Undefined: %h", undefined),
+    TypeError,
+    "Invalid hex formatter argument",
+  );
 });
 
-Deno.test("hex formatters - wrong type fallback", () => {
+Deno.test("hex formatters - wrong type throws TypeError", () => {
   const logger = getLogger("test-wrong-type");
 
-  // Should not throw - falls back to String() for wrong types
-  logger.info("String: %h", "not a buffer");
-  logger.info("Number: %h", 12345);
-  assertExists(logger);
+  // Should throw TypeError for wrong types (not Uint8Array/ArrayBuffer/number[])
+  assertThrows(
+    () => logger.info("String: %h", "not a buffer"),
+    TypeError,
+    "Invalid hex formatter argument",
+  );
+
+  assertThrows(
+    () => logger.info("Number: %h", 12345),
+    TypeError,
+    "Invalid hex formatter argument",
+  );
 });
 
 Deno.test("hex formatters - all log levels work", () => {

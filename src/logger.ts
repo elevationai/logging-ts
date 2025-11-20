@@ -24,33 +24,72 @@ import { dirname, join, resolve } from "@std/path";
 // ===== Hex Formatter Utilities =====
 
 /**
+ * Internal helper to convert byte array to hex string with customizable separator
+ * @param data Uint8Array, ArrayBuffer, or number array
+ * @param maxBytes Optional maximum bytes to output (truncates if exceeded, no limit by default)
+ * @param separator Separator between hex bytes ("" for compact, " " for spaced)
+ * @returns Hex string with specified separator
+ * @throws {TypeError} If data is not a valid byte array type
+ */
+function toHex(
+  data: Uint8Array | ArrayBuffer | number[],
+  maxBytes: number | undefined,
+  separator: string,
+): string {
+  if (!data) {
+    throw new TypeError(
+      `Invalid hex formatter argument: expected Uint8Array, ArrayBuffer, or number[], got ${data}`,
+    );
+  }
+
+  // Convert to Uint8Array
+  let bytes: Uint8Array;
+  try {
+    if (data instanceof ArrayBuffer) {
+      bytes = new Uint8Array(data);
+    }
+    else if (Array.isArray(data)) {
+      bytes = new Uint8Array(data);
+    }
+    else if (data instanceof Uint8Array) {
+      bytes = data;
+    }
+    else {
+      throw new TypeError(
+        `Invalid hex formatter argument: expected Uint8Array, ArrayBuffer, or number[], got ${typeof data}`,
+      );
+    }
+  }
+  catch (error) {
+    if (error instanceof TypeError) throw error;
+    throw new TypeError(
+      `Failed to convert argument to Uint8Array: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  // Truncate if maxBytes specified and exceeded
+  if (maxBytes !== undefined && bytes.length > maxBytes) {
+    const truncated = Array.from(bytes.slice(0, maxBytes))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(separator);
+    const ellipsis = separator ? " ..." : "...";
+    return `${truncated}${ellipsis} [truncated, ${bytes.length - maxBytes} more bytes]`;
+  }
+
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join(separator);
+}
+
+/**
  * Convert byte array to compact hex string (no spaces)
  * @param data Uint8Array, ArrayBuffer, or number array
  * @param maxBytes Optional maximum bytes to output (truncates if exceeded, no limit by default)
  * @returns Hex string like "deadbeef"
+ * @throws {TypeError} If data is not a valid byte array type
  */
 function toHexCompact(data: Uint8Array | ArrayBuffer | number[], maxBytes?: number): string {
-  if (!data) return String(data); // Handle null/undefined
-
-  try {
-    const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : Array.isArray(data) ? new Uint8Array(data) : data;
-
-    // Truncate if maxBytes specified and exceeded
-    if (maxBytes !== undefined && bytes.length > maxBytes) {
-      const truncated = Array.from(bytes.slice(0, maxBytes))
-        .map((b) => b.toString(16).padStart(2, "0"))
-        .join("");
-      return `${truncated}... [truncated, ${bytes.length - maxBytes} more bytes]`;
-    }
-
-    return Array.from(bytes)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-  }
-  catch {
-    // Fallback for wrong types
-    return String(data);
-  }
+  return toHex(data, maxBytes, "");
 }
 
 /**
@@ -58,32 +97,16 @@ function toHexCompact(data: Uint8Array | ArrayBuffer | number[], maxBytes?: numb
  * @param data Uint8Array, ArrayBuffer, or number array
  * @param maxBytes Optional maximum bytes to output (truncates if exceeded, no limit by default)
  * @returns Hex string like "de ad be ef"
+ * @throws {TypeError} If data is not a valid byte array type
  */
 function toHexSpaced(data: Uint8Array | ArrayBuffer | number[], maxBytes?: number): string {
-  if (!data) return String(data);
-
-  try {
-    const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : Array.isArray(data) ? new Uint8Array(data) : data;
-
-    // Truncate if maxBytes specified and exceeded
-    if (maxBytes !== undefined && bytes.length > maxBytes) {
-      const truncated = Array.from(bytes.slice(0, maxBytes))
-        .map((b) => b.toString(16).padStart(2, "0"))
-        .join(" ");
-      return `${truncated} ... [truncated, ${bytes.length - maxBytes} more bytes]`;
-    }
-
-    return Array.from(bytes)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join(" ");
-  }
-  catch {
-    return String(data);
-  }
+  return toHex(data, maxBytes, " ");
 }
 
 // Cached regex for performance
 const HEX_FORMAT_REGEX = /%([-+0 #]*)(\d+|\*)?(?:\.(\d+|\*))?([hH])/g;
+// Regex to match ALL formatters (to track argument positions)
+const ALL_FORMAT_REGEX = /%([-+0 #]*)(\d+|\*)?(?:\.(\d+|\*))?([diouxXeEfFgGaAcspn%hH])/g;
 
 /**
  * Preprocess format string to convert %h/%H to %s with hex-converted args
@@ -97,37 +120,56 @@ const HEX_FORMAT_REGEX = /%([-+0 #]*)(\d+|\*)?(?:\.(\d+|\*))?([hH])/g;
  */
 function preprocessHexFormatters(msg: string, args: unknown[]): [string, unknown[]] {
   // Fast path: skip if no hex formatters present (check for 'h' or 'H' after %)
-  if (!msg.includes("h") && !msg.includes("H")) {
+  if (!(msg.includes("h") || msg.includes("H"))) {
     return [msg, args];
   }
 
+  // First, find all formatters to determine argument positions
+  const allFormatters: Array<{ match: string; index: number; isHex: boolean; specifier?: string }> = [];
+  let match;
+  const allRegex = new RegExp(ALL_FORMAT_REGEX);
+  while ((match = allRegex.exec(msg)) !== null) {
+    const specifier = match[4];
+    allFormatters.push({
+      match: match[0],
+      index: match.index,
+      isHex: specifier === "h" || specifier === "H",
+      specifier: specifier,
+    });
+  }
+
+  // Build processed args array with hex conversions at correct positions
   const processedArgs: unknown[] = [];
-  let argIndex = 0;
+  let formatIndex = 0;
 
   const processedMsg = msg.replace(HEX_FORMAT_REGEX, (match, flags, width, precision, specifier) => {
+    // Find which formatter index this hex formatter is at
+    const hexFormatterInfo = allFormatters.find((f, i) =>
+      i >= formatIndex && f.isHex && msg.indexOf(f.match, f.index) === msg.indexOf(match, f.index)
+    );
+
+    if (!hexFormatterInfo) return match;
+
+    const argIndex = allFormatters.indexOf(hexFormatterInfo);
+    formatIndex = argIndex + 1;
+
     if (argIndex >= args.length) {
       // Not enough args provided
       return match;
     }
 
-    const arg = args[argIndex++];
+    const arg = args[argIndex];
 
     // Parse precision as max bytes (undefined = no limit)
     const maxBytes = precision ? parseInt(precision, 10) : undefined;
 
-    // Handle type checking and conversion
-    let hexString: string;
-    try {
-      hexString = specifier === "h"
-        ? toHexCompact(arg as Uint8Array | ArrayBuffer | number[], maxBytes)
-        : toHexSpaced(arg as Uint8Array | ArrayBuffer | number[], maxBytes);
-    }
-    catch {
-      // Fallback for wrong types
-      hexString = String(arg);
-    }
+    // Convert to hex (throws TypeError if wrong type)
+    const hexString = specifier === "h"
+      ? toHexCompact(arg as Uint8Array | ArrayBuffer | number[], maxBytes)
+      : toHexSpaced(arg as Uint8Array | ArrayBuffer | number[], maxBytes);
 
-    processedArgs.push(hexString);
+    // Store converted value at the correct position
+    processedArgs[argIndex] = hexString;
 
     // Replace with %s, preserving any flags/width (but NOT precision since we used it)
     const flagStr = flags || "";
@@ -135,8 +177,12 @@ function preprocessHexFormatters(msg: string, args: unknown[]): [string, unknown
     return `%${flagStr}${widthStr}s`;
   });
 
-  // Add any remaining args that weren't consumed by hex formatters
-  processedArgs.push(...args.slice(argIndex));
+  // Fill in non-hex args at their original positions
+  for (let i = 0; i < args.length; i++) {
+    if (processedArgs[i] === undefined) {
+      processedArgs[i] = args[i];
+    }
+  }
 
   return [processedMsg, processedArgs];
 }
@@ -322,8 +368,12 @@ function createLogMethod(
       const formatted = sprintf(processedMsg, ...processedArgs);
       originalMethod.call(this, formatted);
     }
-    catch (_err) {
-      // If sprintf fails, fall back to original behavior (pass args through)
+    catch (err) {
+      // Rethrow TypeErrors (programming errors should not be hidden)
+      if (err instanceof TypeError) {
+        throw err;
+      }
+      // If sprintf fails for other reasons, fall back to original behavior (pass args through)
       originalMethod.call(this, msg, ...args);
     }
   };
