@@ -10,6 +10,15 @@
  * @module
  */
 
-export { attachHandler, detachHandler, type ExtendedLogger, getConfiguredLoggers, getLogger } from "./src/logger.ts";
+export {
+  attachHandler,
+  type ByteArrayLike,
+  detachHandler,
+  type ExtendedLogger,
+  getConfiguredLoggers,
+  getLogger,
+  lazyError,
+  lazyHex,
+} from "./src/logger.ts";
 
 export type { ConsoleConfig, FileConfig, FormatConfig, LoggingConfig, ModuleConfig } from "./src/types.ts";

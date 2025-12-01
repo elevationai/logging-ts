@@ -2,8 +2,8 @@
  * Tests for sprintf-style formatting with lazy evaluation
  */
 
-import { assertEquals, assertExists } from "@std/assert";
-import { attachHandler, detachHandler, getLogger } from "../mod.ts";
+import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
+import { attachHandler, detachHandler, getLogger, lazyError, lazyHex } from "../mod.ts";
 import { BaseHandler, type LogRecord } from "@std/log";
 
 /**
@@ -320,6 +320,351 @@ Deno.test("binary formatting", () => {
 
   logger.info("Binary: %b", 5);
   assertEquals(mockHandler.getLastMessage(), "Binary: 101");
+
+  detachHandler(undefined, mockHandler);
+});
+
+// Tests for lazy function argument evaluation
+Deno.test("lazy evaluation: function argument is called when level enabled", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  let callCount = 0;
+  const lazyValue = () => {
+    callCount++;
+    return "lazy result";
+  };
+
+  // INFO level is enabled, so the function should be called
+  logger.info("Result: %s", lazyValue);
+
+  assertEquals(callCount, 1, "Function should be called when level is enabled");
+  assertEquals(mockHandler.getLastMessage(), "Result: lazy result");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("lazy evaluation: function argument is NOT called when level disabled", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  let callCount = 0;
+  const expensiveComputation = () => {
+    callCount++;
+    return "expensive result";
+  };
+
+  const initialCount = mockHandler.messages.length;
+
+  // DEBUG is disabled at INFO level, so function should NOT be called
+  logger.debug("Debug: %s", expensiveComputation);
+
+  assertEquals(callCount, 0, "Function should NOT be called when level is disabled");
+  assertEquals(mockHandler.messages.length, initialCount, "No message should be logged");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("lazy evaluation: mixed function and non-function arguments", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  let callCount = 0;
+  const lazyName = () => {
+    callCount++;
+    return "Alice";
+  };
+
+  // Mix of direct value and function
+  logger.info("User %s has ID %d", lazyName, 123);
+
+  assertEquals(callCount, 1, "Function argument should be called");
+  assertEquals(mockHandler.getLastMessage(), "User Alice has ID 123");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("lazy evaluation: multiple function arguments", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  let call1 = 0, call2 = 0, call3 = 0;
+  const getName = () => {
+    call1++;
+    return "Bob";
+  };
+  const getAge = () => {
+    call2++;
+    return 30;
+  };
+  const getCity = () => {
+    call3++;
+    return "NYC";
+  };
+
+  logger.info("%s is %d years old from %s", getName, getAge, getCity);
+
+  assertEquals(call1, 1, "First function should be called once");
+  assertEquals(call2, 1, "Second function should be called once");
+  assertEquals(call3, 1, "Third function should be called once");
+  assertEquals(mockHandler.getLastMessage(), "Bob is 30 years old from NYC");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("lazy evaluation: function returning object with JSON format", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  let callCount = 0;
+  const getData = () => {
+    callCount++;
+    return { name: "test", value: 42 };
+  };
+
+  logger.info("Data: %j", getData);
+
+  assertEquals(callCount, 1, "Function should be called");
+  assertEquals(mockHandler.getLastMessage(), 'Data: {"name":"test","value":42}');
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("lazy evaluation: function that throws is handled gracefully", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+  mockHandler.clear();
+
+  const throwingFn = () => {
+    throw new Error("Intentional test error");
+  };
+
+  // Should not throw, should log gracefully with error placeholder
+  logger.info("Result: %s", throwingFn);
+
+  // Should have logged 2 messages: the error (via logger.error) and the info message
+  assertEquals(mockHandler.messages.length, 2);
+  assertEquals(mockHandler.messages[0], "Error evaluating lazy argument: Intentional test error");
+  assertEquals(mockHandler.messages[1], "Result: [error evaluating lazy argument]");
+
+  detachHandler(undefined, mockHandler);
+});
+
+// Tests for lazyHex
+Deno.test("lazyHex: converts Uint8Array to hex string with default space delimiter", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const bytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+  logger.info("Bytes: %s", lazyHex(bytes));
+
+  assertEquals(mockHandler.getLastMessage(), "Bytes: de ad be ef");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("lazyHex: converts ArrayBuffer to hex string", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const buffer = new ArrayBuffer(4);
+  new Uint8Array(buffer).set([0xca, 0xfe, 0xba, 0xbe]);
+  logger.info("Buffer: %s", lazyHex(buffer));
+
+  assertEquals(mockHandler.getLastMessage(), "Buffer: ca fe ba be");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("lazyHex: converts number array to hex string", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const bytes = [0x01, 0x02, 0x03, 0x04];
+  logger.info("Numbers: %s", lazyHex(bytes));
+
+  assertEquals(mockHandler.getLastMessage(), "Numbers: 01 02 03 04");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("lazyHex: empty delimiter produces compact output", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const bytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+  logger.info("Compact: %s", lazyHex(bytes, ""));
+
+  assertEquals(mockHandler.getLastMessage(), "Compact: deadbeef");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("lazyHex: custom delimiter", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const bytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+  logger.info("Colon: %s", lazyHex(bytes, ":"));
+
+  assertEquals(mockHandler.getLastMessage(), "Colon: de:ad:be:ef");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("lazyHex: maxBytes truncates output", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const bytes = new Uint8Array([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
+  logger.info("Truncated: %s", lazyHex(bytes, " ", 4));
+
+  assertEquals(mockHandler.getLastMessage(), "Truncated: 01 02 03 04 ... [4 more bytes]");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("lazyHex: maxBytes with empty delimiter", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const bytes = new Uint8Array([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]);
+  logger.info("Compact truncated: %s", lazyHex(bytes, "", 3));
+
+  assertEquals(mockHandler.getLastMessage(), "Compact truncated: 010203... [3 more bytes]");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("lazyHex: is not called when log level disabled", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  let callCount = 0;
+  const bytes = new Uint8Array([0xde, 0xad]);
+
+  // Wrap lazyHex in a function that counts calls
+  const trackedLazyHex = () => {
+    callCount++;
+    return lazyHex(bytes)();
+  };
+
+  const initialCount = mockHandler.messages.length;
+
+  // DEBUG is disabled at INFO level
+  logger.debug("Debug bytes: %s", trackedLazyHex);
+
+  assertEquals(callCount, 0, "lazyHex should not be called when level is disabled");
+  assertEquals(mockHandler.messages.length, initialCount);
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("lazyHex: handles empty array", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const bytes = new Uint8Array([]);
+  logger.info("Empty: %s", lazyHex(bytes));
+
+  assertEquals(mockHandler.getLastMessage(), "Empty: ");
+
+  detachHandler(undefined, mockHandler);
+});
+
+// Tests for lazyError
+Deno.test("lazyError: formats Error with stack trace", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+  attachHandler(undefined, mockHandler);
+
+  const error = new Error("test error");
+  logger.info("caught: %s", lazyError(error));
+
+  const msg = mockHandler.getLastMessage()!;
+  assertStringIncludes(msg, "caught: Error: test error");
+  assertStringIncludes(msg, "at "); // has stack trace
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("lazyError: formats Error without stack", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+  attachHandler(undefined, mockHandler);
+
+  const error = new Error("no stack");
+  error.stack = undefined;
+  logger.info("caught: %s", lazyError(error));
+
+  assertEquals(mockHandler.getLastMessage(), "caught: Error: no stack");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("lazyError: formats non-Error values", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+  attachHandler(undefined, mockHandler);
+
+  logger.info("string: %s", lazyError("oops"));
+  assertEquals(mockHandler.getLastMessage(), "string: Non-Error exception: oops");
+
+  logger.info("number: %s", lazyError(42));
+  assertEquals(mockHandler.getLastMessage(), "number: Non-Error exception: 42");
+
+  logger.info("null: %s", lazyError(null));
+  assertEquals(mockHandler.getLastMessage(), "null: Non-Error exception: null");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("lazyError: is not called when log level disabled", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+  attachHandler(undefined, mockHandler);
+
+  let callCount = 0;
+  const trackedLazyError = () => {
+    callCount++;
+    return lazyError(new Error("test"))();
+  };
+
+  const initialCount = mockHandler.messages.length;
+  logger.debug("Debug error: %s", trackedLazyError); // DEBUG disabled at INFO level
+
+  assertEquals(callCount, 0, "lazyError should not be called when level is disabled");
+  assertEquals(mockHandler.messages.length, initialCount);
 
   detachHandler(undefined, mockHandler);
 });

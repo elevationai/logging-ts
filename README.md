@@ -105,6 +105,70 @@ logger.debug("Complex data: %s", JSON.stringify(largeObject));
 
 **Important:** JavaScript evaluates function arguments before calling the function, so expensive operations like `JSON.stringify()` will execute even if the log level is disabled. Use the `%j` formatter instead, which only stringifies when the log level is enabled.
 
+### Lazy Evaluation with Functions
+
+For expensive computations, pass a function that returns the value. The function is only called if the log level is enabled:
+
+```typescript
+import { getLogger, lazyError, lazyHex } from "@eai/logging-ts";
+
+const logger = getLogger();
+
+// Function arguments are only called when the log level is enabled
+logger.debug("expensive: %s", () => computeExpensiveValue());
+logger.debug("user: %j", () => fetchUserDetails(userId));
+
+// Multiple lazy arguments
+logger.debug("%s processed %d items", () => getName(), () => countItems());
+```
+
+### `lazyHex` - Byte Array Formatting
+
+Format byte arrays as hex strings, only when the log level is enabled:
+
+```typescript
+import { getLogger, lazyHex } from "@eai/logging-ts";
+
+const logger = getLogger();
+const bytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+
+// Space-delimited (default)
+logger.debug("data: %s", lazyHex(bytes));
+// Output: "de ad be ef"
+
+// Compact (no delimiter)
+logger.debug("compact: %s", lazyHex(bytes, ""));
+// Output: "deadbeef"
+
+// Custom delimiter
+logger.debug("colons: %s", lazyHex(bytes, ":"));
+// Output: "de:ad:be:ef"
+
+// Truncate large buffers
+logger.debug("first 16: %s", lazyHex(largeBuffer, " ", 16));
+// Output: "01 02 03 04 ... [984 more bytes]"
+```
+
+Accepts `Uint8Array`, `ArrayBuffer`, or `number[]`.
+
+### `lazyError` - Error Formatting
+
+Format errors with stack traces, only when the log level is enabled:
+
+```typescript
+import { getLogger, lazyError } from "@eai/logging-ts";
+
+const logger = getLogger();
+
+try {
+  riskyOperation();
+}
+catch (err) {
+  // Full stack trace, but only formatted if DEBUG is enabled
+  logger.debug("caught error: %s", lazyError(err));
+}
+```
+
 **Automatic Detection:**
 
 The logger automatically detects when format arguments are provided:

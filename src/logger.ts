@@ -126,60 +126,54 @@ export interface ExtendedLogger extends Omit<Logger, "debug" | "info" | "warn" |
   critical: (msg: string, ...args: unknown[]) => void;
 }
 
-/**
- * Create a logger method with lazy sprintf evaluation
- */
-function createLogMethod(
-  originalMethod: (msg: string, ...args: unknown[]) => void,
-  level: LogLevel,
-  loggerLevel: LogLevel,
-): (msg: string, ...args: unknown[]) => void {
-  return function (this: unknown, msg: string, ...args: unknown[]): void {
-    // Early return if log level is disabled (lazy evaluation)
-    if (loggerLevel > level) return;
+/** Resolve function arguments - calls any functions to get their values (lazy evaluation) */
+function resolveArgs(args: unknown[], logError: (msg: string) => void): unknown[] {
+  return args.map((arg) => {
+    if (typeof arg !== "function") return arg;
+    try {
+      return arg();
+    }
+    catch (error) {
+      logError(`Error evaluating lazy argument: ${error instanceof Error ? error.message : String(error)}`);
+      return "[error evaluating lazy argument]";
+    }
+  });
+}
 
-    // If no args provided, call original method directly
+/** Format an error for logging */
+function formatError(error: Error | unknown): string {
+  if (error instanceof Error) return error.stack || `${error.name}: ${error.message}`;
+  return `Non-Error exception: ${String(error)}`;
+}
+
+/** Create a logger method with lazy sprintf evaluation */
+function createLogMethod(logger: Logger, level: LogLevel): (msg: string, ...args: unknown[]) => void {
+  const methodName = getLevelName(level).toLowerCase() as "debug" | "info" | "warn" | "error" | "critical";
+  const logMethod = logger[methodName].bind(logger); // Capture before it gets wrapped
+
+  return (msg: string, ...args: unknown[]): void => {
+    if (logger.level > level) return; // Disabled level
+
     if (args.length === 0) {
-      originalMethod.call(this, msg);
+      logMethod(msg);
       return;
     }
 
-    // Try sprintf formatting with args
+    const resolvedArgs = resolveArgs(args, (errMsg) => logger.error(errMsg));
     try {
-      const formatted = sprintf(msg, ...args);
-      originalMethod.call(this, formatted);
+      logMethod(sprintf(msg, ...resolvedArgs));
     }
-    catch (_err) {
-      // If sprintf fails, fall back to original behavior (pass args through)
-      originalMethod.call(this, msg, ...args);
+    catch {
+      logMethod(msg, ...resolvedArgs); // sprintf failed, pass args through
     }
   };
 }
 
-/**
- * Create an exception logging method with lazy evaluation
- */
-function createExceptionMethod(
-  originalErrorMethod: (msg: string, ...args: unknown[]) => void,
-  loggerLevel: LogLevel,
-): (error: Error | unknown) => void {
-  return function (this: unknown, error: Error | unknown): void {
-    // Early return if ERROR level is disabled (lazy evaluation)
-    if (loggerLevel > LogLevels.ERROR) return;
-
-    // Format the error for logging
-    let message: string;
-    if (error instanceof Error) {
-      // Use stack if available (includes name, message, and trace)
-      message = error.stack || `${error.name}: ${error.message}`;
-    }
-    else {
-      // Handle non-Error objects (primitives, objects, etc.)
-      message = `Non-Error exception: ${String(error)}`;
-    }
-
-    // Log using the original error method
-    originalErrorMethod.call(this, message);
+/** Create an exception logging method with lazy evaluation */
+function createExceptionMethod(logger: Logger): (error: Error | unknown) => void {
+  return (error: Error | unknown): void => {
+    if (logger.level > LogLevels.ERROR) return;
+    logger.error(formatError(error));
   };
 }
 
@@ -198,47 +192,25 @@ export function getLogger(name?: string): ExtendedLogger {
   // If logger has no handlers (unconfigured name), use default logger instead
   if (logger.handlers.length === 0) {
     const defaultLogger = getStdLogger();
-
-    // Store original methods
-    const origDebug = defaultLogger.debug.bind(defaultLogger);
-    const origInfo = defaultLogger.info.bind(defaultLogger);
-    const origWarn = defaultLogger.warn.bind(defaultLogger);
-    const origError = defaultLogger.error.bind(defaultLogger);
-    const origCritical = defaultLogger.critical.bind(defaultLogger);
-
-    // Create extended logger object
-    const extLogger = defaultLogger as unknown as ExtendedLogger;
-
-    // Replace methods with sprintf versions
-    extLogger.debug = createLogMethod(origDebug, LogLevels.DEBUG, defaultLogger.level);
-    extLogger.info = createLogMethod(origInfo, LogLevels.INFO, defaultLogger.level);
-    extLogger.warn = createLogMethod(origWarn, LogLevels.WARN, defaultLogger.level);
-    extLogger.error = createLogMethod(origError, LogLevels.ERROR, defaultLogger.level);
-    extLogger.critical = createLogMethod(origCritical, LogLevels.CRITICAL, defaultLogger.level);
-    extLogger.warning = extLogger.warn; // Alias for compatibility
-    extLogger.exception = createExceptionMethod(origError, defaultLogger.level);
-
-    return extLogger;
+    return wrapLogger(defaultLogger);
   }
 
-  // Store original methods
-  const origDebug = logger.debug.bind(logger);
-  const origInfo = logger.info.bind(logger);
-  const origWarn = logger.warn.bind(logger);
-  const origError = logger.error.bind(logger);
-  const origCritical = logger.critical.bind(logger);
+  return wrapLogger(logger);
+}
 
-  // Create extended logger object
+/**
+ * Wrap a logger with sprintf and lazy evaluation support
+ */
+function wrapLogger(logger: Logger): ExtendedLogger {
   const extLogger = logger as unknown as ExtendedLogger;
 
-  // Replace methods with sprintf versions
-  extLogger.debug = createLogMethod(origDebug, LogLevels.DEBUG, logger.level);
-  extLogger.info = createLogMethod(origInfo, LogLevels.INFO, logger.level);
-  extLogger.warn = createLogMethod(origWarn, LogLevels.WARN, logger.level);
-  extLogger.error = createLogMethod(origError, LogLevels.ERROR, logger.level);
-  extLogger.critical = createLogMethod(origCritical, LogLevels.CRITICAL, logger.level);
-  extLogger.warning = extLogger.warn; // Alias for compatibility
-  extLogger.exception = createExceptionMethod(origError, logger.level);
+  extLogger.debug = createLogMethod(logger, LogLevels.DEBUG);
+  extLogger.info = createLogMethod(logger, LogLevels.INFO);
+  extLogger.warn = createLogMethod(logger, LogLevels.WARN);
+  extLogger.error = createLogMethod(logger, LogLevels.ERROR);
+  extLogger.critical = createLogMethod(logger, LogLevels.CRITICAL);
+  extLogger.warning = extLogger.warn;
+  extLogger.exception = createExceptionMethod(logger);
 
   return extLogger;
 }
@@ -476,4 +448,85 @@ function setupLoggerSync() {
   });
 
   isConfigured = true;
+}
+
+/** Valid byte array types for hex conversion */
+export type ByteArrayLike = Uint8Array | ArrayBuffer | number[];
+
+/** Convert byte array to hex string */
+function toHex(data: ByteArrayLike, delimiter: string, maxBytes?: number): string {
+  if (!data) {
+    throw new TypeError(`Invalid hex formatter argument: expected Uint8Array, ArrayBuffer, or number[], got ${data}`);
+  }
+
+  let bytes: Uint8Array;
+  try {
+    if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
+    else if (Array.isArray(data)) bytes = new Uint8Array(data);
+    else if (data instanceof Uint8Array) bytes = data;
+    else throw new TypeError(`Invalid hex formatter argument: expected Uint8Array, ArrayBuffer, or number[], got ${typeof data}`);
+  }
+  catch (error) {
+    if (error instanceof TypeError) throw error;
+    throw new TypeError(`Failed to convert argument to Uint8Array: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  if (maxBytes !== undefined && bytes.length > maxBytes) {
+    const truncated = Array.from(bytes.slice(0, maxBytes)).map((b) => b.toString(16).padStart(2, "0")).join(delimiter);
+    return `${truncated}${delimiter}... [${bytes.length - maxBytes} more bytes]`;
+  }
+
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join(delimiter);
+}
+
+/**
+ * Create a lazy hex formatter for byte arrays.
+ * Returns a function that converts bytes to hex only when called.
+ * Use with the logger's lazy evaluation feature to avoid formatting
+ * bytes when the log level is disabled.
+ *
+ * @example
+ * ```typescript
+ * import { getLogger, lazyHex } from "@eai/logging-ts";
+ *
+ * const logger = getLogger();
+ * const bytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+ *
+ * // Only converts to hex if DEBUG level is enabled (space-delimited by default)
+ * logger.debug("Received bytes: %s", lazyHex(bytes));
+ * // Output: "de ad be ef"
+ *
+ * // Compact format (no delimiter)
+ * logger.debug("Compact: %s", lazyHex(bytes, ""));
+ * // Output: "deadbeef"
+ *
+ * // Truncate large buffers
+ * logger.debug("First 16: %s", lazyHex(largeBuffer, " ", 16));
+ * // Output: "01 02 03 ... [984 more bytes]"
+ * ```
+ *
+ * @param data Uint8Array, ArrayBuffer, or number array
+ * @param delimiter String between bytes (defaults to single space)
+ * @param maxBytes Maximum bytes to output before truncating (no limit by default)
+ * @returns A function that returns the hex string when called
+ */
+export function lazyHex(data: ByteArrayLike, delimiter: string = " ", maxBytes?: number): () => string {
+  return () => toHex(data, delimiter, maxBytes);
+}
+
+/**
+ * Create a lazy error formatter. Returns a function that formats the error only when called.
+ * Use with the logger's lazy evaluation feature to avoid formatting errors when the log level is disabled.
+ *
+ * @example
+ * ```typescript
+ * logger.debug("caught error: %s", lazyError(err));
+ * logger.debug("with context: %s - %s", "operation failed", lazyError(err));
+ * ```
+ *
+ * @param error The error to format (Error object or any value)
+ * @returns A function that returns the formatted error string when called
+ */
+export function lazyError(error: Error | unknown): () => string {
+  return () => formatError(error);
 }
