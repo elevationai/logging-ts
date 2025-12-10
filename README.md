@@ -217,54 +217,52 @@ Create a file at `./configs/logging.jsonc`:
 
 ```jsonc
 {
-  "logging": {
-    // Default console configuration
-    "console": {
-      "enabled": true,
-      "level": "DEBUG",
-      "colorized": true,
-      "includeTimestamp": true,
-      "timestampFormat": "ISO" // Options: "ISO", "UTC", "LOCAL", "UNIX", "SHORT"
-    },
+  // Default console configuration
+  "console": {
+    "enabled": true,
+    "level": "DEBUG",
+    "colorized": true,
+    "includeTimestamp": true,
+    "timestampFormat": "ISO" // Options: "ISO", "UTC", "LOCAL", "UNIX", "SHORT"
+  },
 
-    // Default file configuration
-    "file": {
-      "enabled": true,
-      "level": "INFO",
-      "dir": "./logs",
-      "filename": "app.log",
-      "mode": "a" // append mode
-    },
+  // Default file configuration
+  "file": {
+    "enabled": true,
+    "level": "INFO",
+    "dir": "./logs",
+    "filename": "app.log",
+    "mode": "a" // append mode
+  },
 
-    // Global format settings
-    "format": {
-      "levelFormat": "full", // Options: "full", "short" (D, I, W, E, C)
-      "includeLoggerName": true
-    },
+  // Global format settings
+  "format": {
+    "levelFormat": "full", // Options: "full", "short" (D, I, W, E, C)
+    "includeLoggerName": true
+  },
 
-    // Module-specific configurations
-    "modules": {
-      "database": {
-        "console": {
-          "enabled": true,
-          "level": "DEBUG"
-        },
-        "file": {
-          "enabled": true,
-          "level": "DEBUG",
-          "filename": "database.log"
-        }
+  // Module-specific configurations
+  "modules": {
+    "database": {
+      "console": {
+        "enabled": true,
+        "level": "DEBUG"
       },
-      "api": {
-        "console": {
-          "enabled": true,
-          "level": "INFO"
-        },
-        "file": {
-          "enabled": true,
-          "level": "WARN",
-          "filename": "api.log"
-        }
+      "file": {
+        "enabled": true,
+        "level": "DEBUG",
+        "filename": "database.log"
+      }
+    },
+    "api": {
+      "console": {
+        "enabled": true,
+        "level": "INFO"
+      },
+      "file": {
+        "enabled": true,
+        "level": "WARN",
+        "filename": "api.log"
       }
     }
   }

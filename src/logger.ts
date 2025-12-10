@@ -17,7 +17,7 @@ import {
   setup,
 } from "@std/log";
 import { sprintf } from "@std/fmt/printf";
-import type { LoggingConfig } from "./types.ts";
+import type { LegacyLoggingConfig, LoggingConfig } from "./types.ts";
 import { parse } from "@std/jsonc";
 import { dirname, join, resolve } from "@std/path";
 
@@ -27,14 +27,17 @@ let isConfigured = false;
 // Store configured logger module names
 let configuredModules: string[] = [];
 
+// Store default handlers for use with unconfigured loggers
+let defaultHandlers: BaseHandler[] = [];
+
 /**
  * Load logging config from file synchronously
  */
-function loadLoggingConfigSync(): LoggingConfig | undefined {
+function loadLoggingConfigSync(): LoggingConfig | LegacyLoggingConfig | undefined {
   try {
     const fullPath = resolve("./configs/logging.jsonc");
     const text = Deno.readTextFileSync(fullPath);
-    return parse(text) as unknown as LoggingConfig;
+    return parse(text) as LoggingConfig | LegacyLoggingConfig;
   }
   catch {
     // File doesn't exist or can't be read - that's ok, use defaults
@@ -189,13 +192,22 @@ export function getLogger(name?: string): ExtendedLogger {
 
   const logger = getStdLogger(name);
 
-  // If logger has no handlers (unconfigured name), use default logger instead
-  if (logger.handlers.length === 0) {
-    const defaultLogger = getStdLogger();
-    return wrapLogger(defaultLogger);
+  // If logger has no handlers (unconfigured name), initialize it with defaults
+  if (logger.handlers.length === 0 && name) {
+    initializeUnconfiguredLogger(logger);
   }
 
   return wrapLogger(logger);
+}
+
+/**
+ * Initialize an unconfigured logger with default handlers and INFO level
+ */
+function initializeUnconfiguredLogger(logger: Logger): void {
+  logger.level = LogLevels.INFO;
+  for (const handler of defaultHandlers) {
+    logger.handlers.push(handler);
+  }
 }
 
 /**
@@ -241,15 +253,12 @@ export function attachHandler(loggerName: string | undefined, handler: BaseHandl
 
   const logger = getStdLogger(loggerName);
 
-  // If this logger has no handlers, it's unconfigured - use default instead
-  // This ensures SSE attaches to the same logger that getLogger() returns
-  if (logger.handlers.length === 0) {
-    const defaultLogger = getStdLogger();
-    defaultLogger.handlers.push(handler);
+  // If this logger has no handlers, initialize it with defaults first
+  if (logger.handlers.length === 0 && loggerName) {
+    initializeUnconfiguredLogger(logger);
   }
-  else {
-    logger.handlers.push(handler);
-  }
+
+  logger.handlers.push(handler);
 }
 
 /**
@@ -258,12 +267,7 @@ export function attachHandler(loggerName: string | undefined, handler: BaseHandl
  * @param handler Handler instance to detach
  */
 export function detachHandler(loggerName: string | undefined, handler: BaseHandler): void {
-  let logger = getStdLogger(loggerName);
-
-  // If this logger has no handlers, it was unconfigured - handler was attached to default instead
-  if (logger.handlers.length === 0) {
-    logger = getStdLogger();
-  }
+  const logger = getStdLogger(loggerName);
 
   const index = logger.handlers.indexOf(handler);
   if (index !== -1) {
@@ -279,17 +283,30 @@ function setupLoggerSync() {
     return;
   }
 
-  const finalConfig = loadLoggingConfigSync();
+  const fileConfig = loadLoggingConfigSync();
 
-  const loggingConfig = finalConfig?.logging || {
-    console: {
-      enabled: true,
-      level: "DEBUG",
-      colorized: true,
-      includeTimestamp: true,
-      timestampFormat: "ISO",
-    },
-  };
+  // Handle legacy config format with nested "logging" key
+  let loggingConfig: LoggingConfig;
+  if (fileConfig && "logging" in fileConfig) {
+    console.warn("====================================================================");
+    console.warn("=  [logging-ts] DEPRECATED CONFIG FORMAT                           =");
+    console.warn("=                                                                  =");
+    console.warn('=  Remove the "logging" wrapper from your logging.jsonc.           =');
+    console.warn("=  Place console, file, modules, and format at the top level.      =");
+    console.warn("====================================================================");
+    loggingConfig = (fileConfig as LegacyLoggingConfig).logging;
+  }
+  else {
+    loggingConfig = fileConfig || {
+      console: {
+        enabled: true,
+        level: "DEBUG",
+        colorized: true,
+        includeTimestamp: true,
+        timestampFormat: "ISO",
+      },
+    };
+  }
 
   const handlers: Record<string, BaseHandler> = {};
 
@@ -362,6 +379,11 @@ function setupLoggerSync() {
       bufferSize: 0, // Immediate writes without buffering
     });
   }
+
+  // Store default handlers for initializing unconfigured loggers
+  // (captured before module-specific handlers are added)
+  const defaultHandlerNames = Object.keys(handlers);
+  defaultHandlers = defaultHandlerNames.map((name) => handlers[name]);
 
   // Setup loggers with module-specific configurations
   const loggers: Record<string, { level: LevelName; handlers: string[] }> = {

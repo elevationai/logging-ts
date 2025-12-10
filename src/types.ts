@@ -10,12 +10,15 @@ export interface ModuleConfig {
 }
 
 export interface LoggingConfig {
-  logging: {
-    console?: ConsoleConfig;
-    file?: FileConfig;
-    modules?: Record<string, ModuleConfig>;
-    format?: FormatConfig;
-  };
+  console?: ConsoleConfig;
+  file?: FileConfig;
+  modules?: Record<string, ModuleConfig>;
+  format?: FormatConfig;
+}
+
+/** @deprecated Old config format with nested "logging" key */
+export interface LegacyLoggingConfig {
+  logging: LoggingConfig;
 }
 
 export interface ConsoleConfig {

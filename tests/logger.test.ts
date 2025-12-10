@@ -27,10 +27,10 @@ Deno.test("getLogger returns module-specific logger", () => {
   assertExists(logger.info);
 });
 
-Deno.test("getLogger returns default logger for unconfigured module", () => {
+Deno.test("getLogger creates dynamic logger for unconfigured module", () => {
   const logger = getLogger("nonexistent-module");
   assertExists(logger);
-  // Should have handlers from default logger
+  // Should have handlers copied from default logger
   assertExists(logger.handlers);
 });
 
