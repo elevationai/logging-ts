@@ -668,3 +668,103 @@ Deno.test("lazyError: is not called when log level disabled", () => {
 
   detachHandler(undefined, mockHandler);
 });
+
+// Test for BigInt handling in %j format
+Deno.test("format %j: handles BigInt values in objects", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const objWithBigInt = {
+    name: "test",
+    count: 9007199254740993n, // BigInt that exceeds Number.MAX_SAFE_INTEGER
+    nested: {
+      value: 123n,
+    },
+  };
+
+  logger.info("Data: %j", objWithBigInt);
+
+  const msg = mockHandler.getLastMessage()!;
+  // Should serialize successfully with BigInt converted to string representation
+  assertStringIncludes(msg, "Data:");
+  assertStringIncludes(msg, '"name":"test"');
+  assertStringIncludes(msg, "9007199254740993"); // BigInt value should appear
+  assertStringIncludes(msg, "123"); // Nested BigInt should appear
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("format %j: handles circular references", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  // deno-lint-ignore no-explicit-any
+  const circular: any = { name: "root", value: 42 };
+  circular.self = circular;
+
+  logger.info("Circular: %j", circular);
+
+  const msg = mockHandler.getLastMessage()!;
+  // Should serialize successfully with circular ref replaced
+  assertStringIncludes(msg, "Circular:");
+  assertStringIncludes(msg, '"name":"root"');
+  assertStringIncludes(msg, '"value":42');
+  assertStringIncludes(msg, "[Circular]"); // Circular reference marker
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("format %j: handles nested circular references", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  // deno-lint-ignore no-explicit-any
+  const obj: any = {
+    level1: {
+      level2: {
+        value: "deep",
+      },
+    },
+  };
+  obj.level1.level2.backToRoot = obj;
+  obj.level1.level2.backToLevel1 = obj.level1;
+
+  logger.info("Nested circular: %j", obj);
+
+  const msg = mockHandler.getLastMessage()!;
+  assertStringIncludes(msg, "Nested circular:");
+  assertStringIncludes(msg, '"value":"deep"');
+  assertStringIncludes(msg, "[Circular]");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("format %j: handles object with throwing toJSON", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const badObj = {
+    name: "test",
+    toJSON() {
+      throw new Error("toJSON exploded");
+    },
+  };
+
+  logger.info("Bad toJSON: %j", badObj);
+
+  const msg = mockHandler.getLastMessage()!;
+  // Should handle gracefully - either serialize what it can or show an error marker
+  assertStringIncludes(msg, "Bad toJSON:");
+  // The message should not be the raw format string
+  assertEquals(msg.includes("%j"), false, "Should not contain raw %j format specifier");
+
+  detachHandler(undefined, mockHandler);
+});

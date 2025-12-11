@@ -16,7 +16,7 @@ import {
   type LogRecord,
   setup,
 } from "@std/log";
-import { sprintf } from "@std/fmt/printf";
+import { sprintf } from "./printf.ts";
 import type { LegacyLoggingConfig, LoggingConfig } from "./types.ts";
 import { parse } from "@std/jsonc";
 import { dirname, join, resolve } from "@std/path";
