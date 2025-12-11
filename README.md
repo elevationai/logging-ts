@@ -196,7 +196,9 @@ The logger automatically detects when format arguments are provided:
 
 **Special Formatters:**
 
-- `%j` - JSON stringify (useful for objects without manual JSON.stringify)
+- `%j` - JSON stringify (handles BigInt, circular refs, and throwing toJSON gracefully)
+- `%h` / `%H` - Byte array as hex (lowercase/uppercase)
+- `%w` - Error with stack trace
 - `%v` - Default value format (calls `toString()`)
 - `%T` - Type of value (via `typeof`)
 - `%c` - Character from Unicode codepoint
@@ -205,7 +207,78 @@ The logger automatically detects when format arguments are provided:
 
 - `%%` - Literal percent sign
 
-For more details and advanced formatting options, see the [@std/fmt documentation](https://github.com/denoland/deno_std/blob/main/fmt/printf.ts).
+### `%h` / `%H` - Byte Array Hex Formatting
+
+Format `Uint8Array`, `ArrayBuffer`, or `number[]` as hex strings:
+
+```typescript
+const bytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+
+// Compact (default)
+logger.info("data: %h", bytes);
+// Output: "deadbeef"
+
+// Uppercase
+logger.info("data: %H", bytes);
+// Output: "DEADBEEF"
+
+// Space-delimited (use space flag)
+logger.info("data: % h", bytes);
+// Output: "de ad be ef"
+
+// Truncate to N bytes (use precision)
+logger.info("data: %.4h", largeBuffer);
+// Output: "01020304... [996 more bytes]"
+
+// Combined: space-delimited + truncated
+logger.info("data: % .4h", largeBuffer);
+// Output: "01 02 03 04 ... [996 more bytes]"
+```
+
+### `%w` - Error Formatting
+
+Format errors with full stack traces:
+
+```typescript
+try {
+  riskyOperation();
+}
+catch (err) {
+  // Full stack trace
+  logger.error("caught: %w", err);
+  // Output: "Error: something failed\n    at riskyOperation (file.ts:10:5)\n    ..."
+
+  // Non-Error values are handled gracefully
+  logger.error("caught: %w", "string error");
+  // Output: "Non-Error exception: string error"
+}
+```
+
+### `%j` - Safe JSON Formatting
+
+The `%j` formatter handles edge cases that would normally cause `JSON.stringify` to fail:
+
+```typescript
+// BigInt values
+logger.info("data: %j", { count: 9007199254740993n });
+// Output: {"count":"[BigInt: 9007199254740993]"}
+
+// Circular references
+const obj = { name: "test" };
+obj.self = obj;
+logger.info("data: %j", obj);
+// Output: {"name":"test","self":"[Circular]"}
+
+// Objects with throwing toJSON
+logger.info("data: %j", {
+  toJSON() {
+    throw new Error();
+  },
+});
+// Output: [unserializable]
+```
+
+For more details on standard formatting options, see the [@std/fmt documentation](https://github.com/denoland/deno_std/blob/main/fmt/printf.ts).
 
 ## Configuration
 

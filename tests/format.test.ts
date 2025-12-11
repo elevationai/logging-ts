@@ -768,3 +768,160 @@ Deno.test("format %j: handles object with throwing toJSON", () => {
 
   detachHandler(undefined, mockHandler);
 });
+
+// Tests for %h/%H (byte hex formatting)
+Deno.test("format %h: formats Uint8Array as lowercase hex", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const bytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+  logger.info("Bytes: %h", bytes);
+
+  assertEquals(mockHandler.getLastMessage(), "Bytes: deadbeef");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("format %H: formats Uint8Array as uppercase hex", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const bytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+  logger.info("Bytes: %H", bytes);
+
+  assertEquals(mockHandler.getLastMessage(), "Bytes: DEADBEEF");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("format % h: formats with space delimiter", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const bytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+  logger.info("Bytes: % h", bytes);
+
+  assertEquals(mockHandler.getLastMessage(), "Bytes: de ad be ef");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("format %.4h: truncates to precision bytes", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const bytes = new Uint8Array([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
+  logger.info("Truncated: %.4h", bytes);
+
+  assertEquals(mockHandler.getLastMessage(), "Truncated: 01020304... [4 more bytes]");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("format %h: formats ArrayBuffer", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const buffer = new ArrayBuffer(4);
+  new Uint8Array(buffer).set([0xca, 0xfe, 0xba, 0xbe]);
+  logger.info("Buffer: %h", buffer);
+
+  assertEquals(mockHandler.getLastMessage(), "Buffer: cafebabe");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("format %h: formats number array", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const bytes = [0x01, 0x02, 0x03, 0x04];
+  logger.info("Numbers: %h", bytes);
+
+  assertEquals(mockHandler.getLastMessage(), "Numbers: 01020304");
+
+  detachHandler(undefined, mockHandler);
+});
+
+// Tests for %w (error formatting)
+Deno.test("format %w: formats Error with stack trace", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const error = new Error("test error");
+  logger.info("caught: %w", error);
+
+  const msg = mockHandler.getLastMessage()!;
+  assertStringIncludes(msg, "caught: Error: test error");
+  assertStringIncludes(msg, "at "); // has stack trace
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("format %w: formats Error without stack", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  const error = new Error("no stack");
+  error.stack = undefined;
+  logger.info("caught: %w", error);
+
+  assertEquals(mockHandler.getLastMessage(), "caught: Error: no stack");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("format %w: formats non-Error values", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  logger.info("string: %w", "oops");
+  assertEquals(mockHandler.getLastMessage(), "string: Non-Error exception: oops");
+
+  logger.info("number: %w", 42);
+  assertEquals(mockHandler.getLastMessage(), "number: Non-Error exception: 42");
+
+  logger.info("null: %w", null);
+  assertEquals(mockHandler.getLastMessage(), "null: Non-Error exception: null");
+
+  detachHandler(undefined, mockHandler);
+});
+
+// Test that lazy evaluation still works with new sprintf integration
+Deno.test("sprintf lazy evaluation: function is called during formatting", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  let callCount = 0;
+  const lazyValue = () => {
+    callCount++;
+    return "lazy result";
+  };
+
+  logger.info("Value: %s", lazyValue);
+
+  assertEquals(callCount, 1, "Function should be called during sprintf");
+  assertEquals(mockHandler.getLastMessage(), "Value: lazy result");
+
+  detachHandler(undefined, mockHandler);
+});

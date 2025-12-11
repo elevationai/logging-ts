@@ -16,7 +16,7 @@ import {
   type LogRecord,
   setup,
 } from "@std/log";
-import { sprintf } from "./printf.ts";
+import { type ByteArrayLike, sprintf, toHex } from "./printf.ts";
 import type { LegacyLoggingConfig, LoggingConfig } from "./types.ts";
 import { parse } from "@std/jsonc";
 import { dirname, join, resolve } from "@std/path";
@@ -129,20 +129,6 @@ export interface ExtendedLogger extends Omit<Logger, "debug" | "info" | "warn" |
   critical: (msg: string, ...args: unknown[]) => void;
 }
 
-/** Resolve function arguments - calls any functions to get their values (lazy evaluation) */
-function resolveArgs(args: unknown[], logError: (msg: string) => void): unknown[] {
-  return args.map((arg) => {
-    if (typeof arg !== "function") return arg;
-    try {
-      return arg();
-    }
-    catch (error) {
-      logError(`Error evaluating lazy argument: ${error instanceof Error ? error.message : String(error)}`);
-      return "[error evaluating lazy argument]";
-    }
-  });
-}
-
 /** Format an error for logging */
 function formatError(error: Error | unknown): string {
   if (error instanceof Error) return error.stack || `${error.name}: ${error.message}`;
@@ -162,12 +148,12 @@ function createLogMethod(logger: Logger, level: LogLevel): (msg: string, ...args
       return;
     }
 
-    const resolvedArgs = resolveArgs(args, (errMsg) => logger.error(errMsg));
     try {
-      logMethod(sprintf(msg, ...resolvedArgs));
+      logMethod(sprintf(msg, ...args));
     }
-    catch {
-      logMethod(msg, ...resolvedArgs); // sprintf failed, pass args through
+    catch (error) {
+      getStdLogger().warn(`sprintf failed: ${error instanceof Error ? error.message : String(error)}; falling back to raw output`);
+      logMethod(msg, ...args);
     }
   };
 }
@@ -472,34 +458,8 @@ function setupLoggerSync() {
   isConfigured = true;
 }
 
-/** Valid byte array types for hex conversion */
-export type ByteArrayLike = Uint8Array | ArrayBuffer | number[];
-
-/** Convert byte array to hex string */
-function toHex(data: ByteArrayLike, delimiter: string, maxBytes?: number): string {
-  if (!data) {
-    throw new TypeError(`Invalid hex formatter argument: expected Uint8Array, ArrayBuffer, or number[], got ${data}`);
-  }
-
-  let bytes: Uint8Array;
-  try {
-    if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
-    else if (Array.isArray(data)) bytes = new Uint8Array(data);
-    else if (data instanceof Uint8Array) bytes = data;
-    else throw new TypeError(`Invalid hex formatter argument: expected Uint8Array, ArrayBuffer, or number[], got ${typeof data}`);
-  }
-  catch (error) {
-    if (error instanceof TypeError) throw error;
-    throw new TypeError(`Failed to convert argument to Uint8Array: ${error instanceof Error ? error.message : String(error)}`);
-  }
-
-  if (maxBytes !== undefined && bytes.length > maxBytes) {
-    const truncated = Array.from(bytes.slice(0, maxBytes)).map((b) => b.toString(16).padStart(2, "0")).join(delimiter);
-    return `${truncated}${delimiter}... [${bytes.length - maxBytes} more bytes]`;
-  }
-
-  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join(delimiter);
-}
+// Re-export ByteArrayLike for backwards compatibility
+export type { ByteArrayLike };
 
 /**
  * Create a lazy hex formatter for byte arrays.

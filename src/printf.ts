@@ -160,6 +160,41 @@
 import { stripAnsiCode } from "@std/fmt/colors";
 import { getLogger } from "@std/log";
 
+/** Valid byte array types for hex conversion */
+export type ByteArrayLike = Uint8Array | ArrayBuffer | number[];
+
+/**
+ * Convert byte array to hex string
+ * @param data The byte array to convert
+ * @param delimiter String between bytes (defaults to empty string)
+ * @param maxBytes Maximum bytes to output before truncating
+ * @returns Hex string representation
+ */
+export function toHex(data: ByteArrayLike, delimiter: string = "", maxBytes?: number): string {
+  if (!data) {
+    throw new TypeError(`Invalid hex formatter argument: expected Uint8Array, ArrayBuffer, or number[], got ${data}`);
+  }
+
+  let bytes: Uint8Array;
+  try {
+    if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
+    else if (Array.isArray(data)) bytes = new Uint8Array(data);
+    else if (data instanceof Uint8Array) bytes = data;
+    else throw new TypeError(`Invalid hex formatter argument: expected Uint8Array, ArrayBuffer, or number[], got ${typeof data}`);
+  }
+  catch (error) {
+    if (error instanceof TypeError) throw error;
+    throw new TypeError(`Failed to convert argument to Uint8Array: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  if (maxBytes !== undefined && bytes.length > maxBytes) {
+    const truncated = Array.from(bytes.slice(0, maxBytes)).map((b) => b.toString(16).padStart(2, "0")).join(delimiter);
+    return `${truncated}${delimiter}... [${bytes.length - maxBytes} more bytes]`;
+  }
+
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join(delimiter);
+}
+
 const State = {
   PASSTHROUGH: 0,
   PERCENT: 1,
@@ -477,6 +512,23 @@ class Printf {
     return str + " ]";
   }
 
+  /**
+   * Resolve an argument value, calling it if it's a function (lazy evaluation).
+   */
+  resolveArg(arg: unknown): unknown {
+    if (typeof arg === "function") {
+      try {
+        return arg();
+      }
+      catch (error) {
+        const logger = getLogger();
+        logger.warn(`Error evaluating lazy argument: ${error instanceof Error ? error.message : String(error)}`);
+        return "[error evaluating lazy argument]";
+      }
+    }
+    return arg;
+  }
+
   /** Handle verb */
   handleVerb() {
     const verb = this.format[this.i];
@@ -492,7 +544,8 @@ class Printf {
       this.buf += `%!(MISSING '${verb}')`;
     }
     else {
-      const arg = this.args[this.argNum]; // check out of range
+      const rawArg = this.args[this.argNum];
+      const arg = this.resolveArg(rawArg); // Lazy evaluation: call functions
       this.haveSeen[this.argNum] = true; // keep track of used args
       if (this.flags.lessthan) {
         this.buf += this.handleLessThan();
@@ -545,6 +598,12 @@ class Printf {
         return this.fmtI(arg, false);
       case "I":
         return this.fmtI(arg, true);
+      case "h":
+        return this.fmtByteHex(arg, false);
+      case "H":
+        return this.fmtByteHex(arg, true);
+      case "w":
+        return this.fmtError(arg);
       default:
         return `%!(BAD VERB '${this.verb}')`;
     }
@@ -997,6 +1056,49 @@ class Printf {
       depth: Infinity,
       iterableLimit: Infinity,
     });
+  }
+
+  /**
+   * Format byte array as hex string
+   * Accepts Uint8Array, ArrayBuffer, or number[]
+   * Uses space delimiter with ' ' flag, precision sets max bytes
+   * @param val The byte array to format
+   * @param upcase Whether to use uppercase hex (A-F vs a-f)
+   */
+  fmtByteHex(val: unknown, upcase: boolean): string {
+    const delimiter = this.flags.space ? " " : "";
+    const maxBytes = this.flags.precision !== -1 ? this.flags.precision : undefined;
+
+    try {
+      let hex = toHex(val as ByteArrayLike, delimiter, maxBytes);
+      if (upcase) {
+        hex = hex.toUpperCase();
+      }
+      return this.pad(hex);
+    }
+    catch {
+      return `%!(BAD HEX ARG '${typeof val}')`;
+    }
+  }
+
+  /**
+   * Format an error with stack trace
+   * @param val The error to format (Error object or any value)
+   */
+  fmtError(val: unknown): string {
+    let result: string;
+    if (val instanceof Error) {
+      result = val.stack || `${val.name}: ${val.message}`;
+    }
+    else {
+      result = `Non-Error exception: ${String(val)}`;
+    }
+
+    if (this.flags.precision !== -1) {
+      result = result.slice(0, this.flags.precision);
+    }
+
+    return this.pad(result);
   }
 }
 
