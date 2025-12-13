@@ -15,7 +15,7 @@ export {
   type ByteArrayLike,
   detachHandler,
   type ExtendedLogger,
-  getConfiguredLoggers,
+  getAllLoggers,
   getLogger,
   lazyError,
   lazyHex,

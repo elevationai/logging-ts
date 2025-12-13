@@ -24,8 +24,8 @@ import { dirname, join, resolve } from "@std/path";
 // Track if logger has been configured
 let isConfigured = false;
 
-// Store configured logger module names
-let configuredModules: string[] = [];
+// Store all active logger names
+const activeLoggers = new Set<string>();
 
 // Store default handlers for use with unconfigured loggers
 let defaultHandlers: BaseHandler[] = [];
@@ -178,6 +178,8 @@ export function getLogger(name?: string): ExtendedLogger {
 
   const logger = getStdLogger(name);
 
+  activeLoggers.add(name || "default");
+
   // If logger has no handlers (unconfigured name), initialize it with defaults
   if (logger.handlers.length === 0 && name) {
     initializeUnconfiguredLogger(logger);
@@ -214,15 +216,15 @@ function wrapLogger(logger: Logger): ExtendedLogger {
 }
 
 /**
- * Get list of configured logger module names
- * @returns Array of configured module names, or empty array if no custom modules configured
+ * Get list of all active logger module names
+ * @returns Array of all active logger names
  */
-export function getConfiguredLoggers(): string[] {
+export function getAllLoggers(): string[] {
   // Auto-setup if not configured yet
   if (!isConfigured) {
     setupLoggerSync();
   }
-  return [...configuredModules]; // Return copy to prevent modification
+  return [...activeLoggers]; // Return copy to prevent modification
 }
 
 /**
@@ -238,6 +240,8 @@ export function attachHandler(loggerName: string | undefined, handler: BaseHandl
   }
 
   const logger = getStdLogger(loggerName);
+
+  activeLoggers.add(name || "default");
 
   // If this logger has no handlers, initialize it with defaults first
   if (logger.handlers.length === 0 && loggerName) {
@@ -381,9 +385,6 @@ function setupLoggerSync() {
 
   // Add module-specific loggers if configured
   if (loggingConfig.modules) {
-    // Store configured module names
-    configuredModules = Object.keys(loggingConfig.modules);
-
     for (const [module, config] of Object.entries(loggingConfig.modules)) {
       const moduleHandlers: string[] = [];
       let minLevel: LevelName = "DEBUG";

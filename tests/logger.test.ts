@@ -3,7 +3,7 @@
  */
 
 import { assertEquals, assertExists } from "@std/assert";
-import { getConfiguredLoggers, getLogger } from "../mod.ts";
+import { getAllLoggers, getLogger } from "../mod.ts";
 
 Deno.test("getLogger returns a logger instance", () => {
   const logger = getLogger();
@@ -34,8 +34,8 @@ Deno.test("getLogger creates dynamic logger for unconfigured module", () => {
   assertExists(logger.handlers);
 });
 
-Deno.test("getConfiguredLoggers returns array", () => {
-  const modules = getConfiguredLoggers();
+Deno.test("getAllLoggers returns array", () => {
+  const modules = getAllLoggers();
   assertExists(modules);
   assertEquals(Array.isArray(modules), true);
 });
