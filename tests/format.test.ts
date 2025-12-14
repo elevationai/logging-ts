@@ -148,9 +148,9 @@ Deno.test("format methods work with zero format args", () => {
 });
 
 Deno.test("lazy evaluation: sprintf not called when level disabled", () => {
-  // The default logger has level INFO (20). This means CRITICAL (50), ERROR (40), WARN (30),
-  // and INFO (20) will pass, but DEBUG (10) will not.
-  const mockHandler = new MockHandler("DEBUG");
+  // All handlers are at INFO level, so DEBUG messages won't be logged.
+  // The lazy evaluation checks handler levels to skip formatting when no handler will accept.
+  const mockHandler = new MockHandler("INFO");
   const logger = getLogger();
 
   attachHandler(undefined, mockHandler);
@@ -158,7 +158,7 @@ Deno.test("lazy evaluation: sprintf not called when level disabled", () => {
   const initialCount = mockHandler.messages.length;
 
   // This should return immediately without calling sprintf or the underlying log method
-  // DEBUG is disabled at INFO level, so nothing should be logged
+  // No handler accepts DEBUG level, so nothing should be logged
   logger.debug("Debug message that won't be logged: %s %d %f", "test", 123, 3.14);
 
   // Verify no new message was logged
@@ -347,7 +347,7 @@ Deno.test("lazy evaluation: function argument is called when level enabled", () 
 });
 
 Deno.test("lazy evaluation: function argument is NOT called when level disabled", () => {
-  const mockHandler = new MockHandler("DEBUG");
+  const mockHandler = new MockHandler("INFO");
   const logger = getLogger();
 
   attachHandler(undefined, mockHandler);
@@ -360,7 +360,7 @@ Deno.test("lazy evaluation: function argument is NOT called when level disabled"
 
   const initialCount = mockHandler.messages.length;
 
-  // DEBUG is disabled at INFO level, so function should NOT be called
+  // No handler accepts DEBUG level, so function should NOT be called
   logger.debug("Debug: %s", expensiveComputation);
 
   assertEquals(callCount, 0, "Function should NOT be called when level is disabled");
@@ -563,7 +563,7 @@ Deno.test("lazyHex: maxBytes with empty delimiter", () => {
 });
 
 Deno.test("lazyHex: is not called when log level disabled", () => {
-  const mockHandler = new MockHandler("DEBUG");
+  const mockHandler = new MockHandler("INFO");
   const logger = getLogger();
 
   attachHandler(undefined, mockHandler);
@@ -579,7 +579,7 @@ Deno.test("lazyHex: is not called when log level disabled", () => {
 
   const initialCount = mockHandler.messages.length;
 
-  // DEBUG is disabled at INFO level
+  // No handler accepts DEBUG level
   logger.debug("Debug bytes: %s", trackedLazyHex);
 
   assertEquals(callCount, 0, "lazyHex should not be called when level is disabled");
@@ -650,7 +650,7 @@ Deno.test("lazyError: formats non-Error values", () => {
 });
 
 Deno.test("lazyError: is not called when log level disabled", () => {
-  const mockHandler = new MockHandler("DEBUG");
+  const mockHandler = new MockHandler("INFO");
   const logger = getLogger();
   attachHandler(undefined, mockHandler);
 
@@ -661,7 +661,7 @@ Deno.test("lazyError: is not called when log level disabled", () => {
   };
 
   const initialCount = mockHandler.messages.length;
-  logger.debug("Debug error: %s", trackedLazyError); // DEBUG disabled at INFO level
+  logger.debug("Debug error: %s", trackedLazyError); // No handler accepts DEBUG level
 
   assertEquals(callCount, 0, "lazyError should not be called when level is disabled");
   assertEquals(mockHandler.messages.length, initialCount);

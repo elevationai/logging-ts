@@ -24,11 +24,11 @@ import { dirname, join, resolve } from "@std/path";
 // Track if logger has been configured
 let isConfigured = false;
 
-// Store all active logger names
-const activeLoggers = new Set<string>();
-
 // Store default handlers for use with unconfigured loggers
 let defaultHandlers: BaseHandler[] = [];
+
+// Cache of initialized loggers to avoid re-creating them
+const loggerCache = new Map<string, Logger>();
 
 /**
  * Load logging config from file synchronously
@@ -141,7 +141,11 @@ function createLogMethod(logger: Logger, level: LogLevel): (msg: string, ...args
   const logMethod = logger[methodName].bind(logger); // Capture before it gets wrapped
 
   return (msg: string, ...args: unknown[]): void => {
-    if (logger.level > level) return; // Disabled level
+    // Check if any handler will accept this level (lazy evaluation optimization)
+    // Skip if logger level is too high OR no handler will accept this level
+    if (logger.level > level) return;
+    const hasAcceptingHandler = logger.handlers.some((h) => h.level <= level);
+    if (!hasAcceptingHandler) return;
 
     if (args.length === 0) {
       logMethod(msg);
@@ -162,6 +166,8 @@ function createLogMethod(logger: Logger, level: LogLevel): (msg: string, ...args
 function createExceptionMethod(logger: Logger): (error: Error | unknown) => void {
   return (error: Error | unknown): void => {
     if (logger.level > LogLevels.ERROR) return;
+    const hasAcceptingHandler = logger.handlers.some((h) => h.level <= LogLevels.ERROR);
+    if (!hasAcceptingHandler) return;
     logger.error(formatError(error));
   };
 }
@@ -176,23 +182,32 @@ export function getLogger(name?: string): ExtendedLogger {
     setupLoggerSync();
   }
 
-  const logger = getStdLogger(name);
+  const cacheKey = name || "default";
 
-  activeLoggers.add(name || "default");
+  // Return cached logger if available
+  if (loggerCache.has(cacheKey)) {
+    return wrapLogger(loggerCache.get(cacheKey)!);
+  }
+
+  const logger = getStdLogger(name);
 
   // If logger has no handlers (unconfigured name), initialize it with defaults
   if (logger.handlers.length === 0 && name) {
     initializeUnconfiguredLogger(logger);
   }
 
+  // Cache the initialized logger
+  loggerCache.set(cacheKey, logger);
+
   return wrapLogger(logger);
 }
 
 /**
- * Initialize an unconfigured logger with default handlers and INFO level
+ * Initialize an unconfigured logger with default handlers and DEBUG level
+ * Handlers do their own filtering based on their configured levels
  */
 function initializeUnconfiguredLogger(logger: Logger): void {
-  logger.level = LogLevels.INFO;
+  logger.level = LogLevels.DEBUG;
   for (const handler of defaultHandlers) {
     logger.handlers.push(handler);
   }
@@ -224,7 +239,7 @@ export function getAllLoggers(): string[] {
   if (!isConfigured) {
     setupLoggerSync();
   }
-  return [...activeLoggers]; // Return copy to prevent modification
+  return Array.from(loggerCache.keys());
 }
 
 /**
@@ -239,13 +254,23 @@ export function attachHandler(loggerName: string | undefined, handler: BaseHandl
     setupLoggerSync();
   }
 
-  const logger = getStdLogger(loggerName);
+  const cacheKey = loggerName || "default";
 
-  activeLoggers.add(name || "default");
+  // Get from cache or create new
+  let logger: Logger;
+  if (loggerCache.has(cacheKey)) {
+    logger = loggerCache.get(cacheKey)!;
+  }
+  else {
+    logger = getStdLogger(loggerName);
 
-  // If this logger has no handlers, initialize it with defaults first
-  if (logger.handlers.length === 0 && loggerName) {
-    initializeUnconfiguredLogger(logger);
+    // If this logger has no handlers, initialize it with defaults first
+    if (logger.handlers.length === 0 && loggerName) {
+      initializeUnconfiguredLogger(logger);
+    }
+
+    // Cache it
+    loggerCache.set(cacheKey, logger);
   }
 
   logger.handlers.push(handler);
@@ -257,7 +282,8 @@ export function attachHandler(loggerName: string | undefined, handler: BaseHandl
  * @param handler Handler instance to detach
  */
 export function detachHandler(loggerName: string | undefined, handler: BaseHandler): void {
-  const logger = getStdLogger(loggerName);
+  const cacheKey = loggerName || "default";
+  const logger = loggerCache.get(cacheKey) || getStdLogger(loggerName);
 
   const index = logger.handlers.indexOf(handler);
   if (index !== -1) {
@@ -290,7 +316,7 @@ function setupLoggerSync() {
     loggingConfig = fileConfig || {
       console: {
         enabled: true,
-        level: "DEBUG",
+        level: "INFO",
         colorized: true,
         includeTimestamp: true,
         timestampFormat: "ISO",
@@ -301,7 +327,7 @@ function setupLoggerSync() {
   const handlers: Record<string, BaseHandler> = {};
 
   // Default console and file configs (used as fallbacks)
-  const defaultConsoleConfig = loggingConfig.console || { enabled: true, level: "DEBUG" };
+  const defaultConsoleConfig = loggingConfig.console || { enabled: true, level: "INFO" };
   const defaultFileConfig = loggingConfig.file;
 
   // Create console formatter function
@@ -351,7 +377,8 @@ function setupLoggerSync() {
 
   // Setup default console handler if enabled
   if (defaultConsoleConfig.enabled !== false) {
-    handlers.console = new ConsoleHandler((defaultConsoleConfig.level as LevelName) || "DEBUG", {
+    const consoleLevel = (defaultConsoleConfig.level as LevelName) || "INFO";
+    handlers.console = new ConsoleHandler(consoleLevel, {
       formatter: createConsoleFormatter(defaultConsoleConfig),
     });
   }
@@ -362,7 +389,7 @@ function setupLoggerSync() {
     const filename = defaultFileConfig.filename || "app.log";
     const filePath = join(dir, filename);
     ensureDirectoryExists(filePath);
-    handlers.file = new FileHandler((defaultFileConfig.level as LevelName) || "DEBUG", {
+    handlers.file = new FileHandler((defaultFileConfig.level as LevelName) || "INFO", {
       filename: filePath,
       mode: defaultFileConfig.mode || "a",
       formatter: createFileFormatter(),
@@ -376,9 +403,10 @@ function setupLoggerSync() {
   defaultHandlers = defaultHandlerNames.map((name) => handlers[name]);
 
   // Setup loggers with module-specific configurations
+  // Set logger level to DEBUG so handlers can receive all logs and do their own filtering
   const loggers: Record<string, { level: LevelName; handlers: string[] }> = {
     default: {
-      level: "INFO" as LevelName,
+      level: "DEBUG" as LevelName,
       handlers: Object.keys(handlers),
     },
   };
@@ -387,25 +415,19 @@ function setupLoggerSync() {
   if (loggingConfig.modules) {
     for (const [module, config] of Object.entries(loggingConfig.modules)) {
       const moduleHandlers: string[] = [];
-      let minLevel: LevelName = "DEBUG";
 
       // Handle module-specific console config
       if (config.console) {
         const consoleEnabled = config.console.enabled !== false;
         if (consoleEnabled) {
           const handlerName = `console_${module}`;
-          const consoleLevel = (config.console.level as LevelName) || "DEBUG";
+          const consoleLevel = (config.console.level as LevelName) || "INFO";
           const consoleConfig = { ...defaultConsoleConfig, ...config.console };
 
           handlers[handlerName] = new ConsoleHandler(consoleLevel, {
             formatter: createConsoleFormatter(consoleConfig),
           });
           moduleHandlers.push(handlerName);
-
-          // Track minimum level
-          if (LogLevels[consoleLevel] < LogLevels[minLevel]) {
-            minLevel = consoleLevel;
-          }
         }
       }
       else if (handlers.console) {
@@ -418,7 +440,7 @@ function setupLoggerSync() {
         const fileEnabled = config.file.enabled !== false;
         if (fileEnabled) {
           const handlerName = `file_${module}`;
-          const fileLevel = (config.file.level as LevelName) || "DEBUG";
+          const fileLevel = (config.file.level as LevelName) || "INFO";
           const dir = config.file.dir || "./logs";
           const filename = config.file.filename || `${module}.log`;
           const filePath = join(dir, filename);
@@ -432,11 +454,6 @@ function setupLoggerSync() {
             bufferSize: 0, // Immediate writes without buffering
           });
           moduleHandlers.push(handlerName);
-
-          // Track minimum level
-          if (LogLevels[fileLevel] < LogLevels[minLevel]) {
-            minLevel = fileLevel;
-          }
         }
       }
       else if (handlers.file) {
@@ -444,8 +461,9 @@ function setupLoggerSync() {
         moduleHandlers.push("file");
       }
 
+      // Always set logger level to DEBUG so handlers can do their own filtering
       loggers[module] = {
-        level: minLevel,
+        level: "DEBUG",
         handlers: moduleHandlers,
       };
     }
