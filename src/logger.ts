@@ -20,6 +20,7 @@ import { type ByteArrayLike, sprintf, toHex } from "./printf.ts";
 import type { LegacyLoggingConfig, LoggingConfig } from "./types.ts";
 import { parse } from "@std/jsonc";
 import { dirname, join, resolve } from "@std/path";
+import { setInternalErrorFn, setInternalWarnFn } from "./internal-logger.ts";
 
 // Track if logger has been configured
 let isConfigured = false;
@@ -29,6 +30,25 @@ let defaultHandlers: BaseHandler[] = [];
 
 // Cache of initialized loggers to avoid re-creating them
 const loggerCache = new Map<string, Logger>();
+
+// Internal library logger name
+const LIBRARY_LOGGER_NAME = "logging-ts";
+
+/**
+ * Get the internal library logger for logging-ts's own messages.
+ * This is separate from user loggers to avoid confusion.
+ */
+function getLibraryLogger(): Logger {
+  if (!isConfigured) {
+    setupLoggerSync();
+  }
+  if (!loggerCache.has(LIBRARY_LOGGER_NAME)) {
+    const logger = getStdLogger(LIBRARY_LOGGER_NAME);
+    initializeUnconfiguredLogger(logger);
+    loggerCache.set(LIBRARY_LOGGER_NAME, logger);
+  }
+  return loggerCache.get(LIBRARY_LOGGER_NAME)!;
+}
 
 /**
  * Load logging config from file synchronously
@@ -156,8 +176,8 @@ function createLogMethod(logger: Logger, level: LogLevel): (msg: string, ...args
       logMethod(sprintf(msg, ...args));
     }
     catch (error) {
-      getStdLogger().warn(`sprintf failed: ${error instanceof Error ? error.message : String(error)}; falling back to raw output`);
-      logMethod(msg, ...args);
+      getLibraryLogger().warn(`sprintf failed: ${error instanceof Error ? error.message : String(error)}; format: "${msg}"`);
+      logMethod(msg); // Log the raw format string as fallback
     }
   };
 }
@@ -475,6 +495,14 @@ function setupLoggerSync() {
   });
 
   isConfigured = true;
+
+  // Set up internal logging functions to use library logger
+  setInternalErrorFn((message: string) => {
+    getLibraryLogger().error(message);
+  });
+  setInternalWarnFn((message: string) => {
+    getLibraryLogger().warn(message);
+  });
 }
 
 // Re-export ByteArrayLike for backwards compatibility

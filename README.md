@@ -207,6 +207,40 @@ The logger automatically detects when format arguments are provided:
 
 - `%%` - Literal percent sign
 
+### Type Validation for `%s`
+
+The `%s` format specifier expects a string argument. If you pass a non-string type, the library will:
+
+1. Log an error to the `logging-ts` logger with a suggestion for the correct format specifier
+2. Output `%s:arg_not_a_string` as a placeholder in the message
+
+```typescript
+// Wrong: passing a number to %s
+logger.info("Code: %s", 1006);
+// Logs error: "%s format specifier received number instead of string: use %d for integers or %f for floats"
+// Output: "Code: %s:arg_not_a_string"
+
+// Wrong: passing an object to %s
+logger.info("User: %s", { name: "john" });
+// Logs error: "%s format specifier received object instead of string: use %j for JSON or %i for inspect"
+// Output: "User: %s:arg_not_a_string"
+
+// Correct usage:
+logger.info("Code: %d", 1006); // For numbers
+logger.info("User: %j", { name: "john" }); // For objects
+logger.info("Active: %t", true); // For booleans
+```
+
+**Type-specific suggestions:**
+
+| Type           | Suggestion                                   |
+| -------------- | -------------------------------------------- |
+| object/array   | `%j` for JSON or `%i` for inspect            |
+| number/bigint  | `%d` for integers or `%f` for floats         |
+| boolean        | `%t` for booleans                            |
+| undefined/null | `%v` for default formatting                  |
+| function       | Call the function first or use `%T` for type |
+
 ### `%h` / `%H` - Byte Array Hex Formatting
 
 Format `Uint8Array`, `ArrayBuffer`, or `number[]` as hex strings:
@@ -464,6 +498,21 @@ deno fmt
 
 ```bash
 deno lint
+```
+
+## Internal Logging
+
+The library uses its own logger named `logging-ts` for internal messages such as:
+
+- Format specifier type mismatches (e.g., passing a number to `%s`)
+- Errors during lazy argument evaluation
+- JSON serialization failures
+
+These messages appear separately from your application logs and are clearly identified by the `logging-ts` logger name:
+
+```
+14:57:12 [E] logging-ts: %s format specifier received number instead of string: use %d for integers or %f for floats
+14:57:12 [I] MyModule: Closing connection - Code: %s:arg_not_a_string, Reason: done
 ```
 
 ## TypeScript Types

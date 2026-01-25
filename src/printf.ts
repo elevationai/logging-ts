@@ -158,7 +158,7 @@
  */
 
 import { stripAnsiCode } from "@std/fmt/colors";
-import { getLogger } from "@std/log";
+import { internalError, internalWarn } from "./internal-logger.ts";
 
 /** Valid byte array types for hex conversion */
 export type ByteArrayLike = Uint8Array | ArrayBuffer | number[];
@@ -521,8 +521,7 @@ class Printf {
         return arg();
       }
       catch (error) {
-        const logger = getLogger();
-        logger.warn(`Error evaluating lazy argument: ${error instanceof Error ? error.message : String(error)}`);
+        internalWarn(` Error evaluating lazy argument: ${error instanceof Error ? error.message : String(error)}`);
         return "[error evaluating lazy argument]";
       }
     }
@@ -929,6 +928,35 @@ class Printf {
    * @param s
    */
   fmtString(s: string): string {
+    // Validate that arg is actually a string and provide helpful suggestions
+    if (typeof s !== "string") {
+      const actualType = s === null ? "null" : Array.isArray(s) ? "array" : typeof s;
+      let suggestion: string;
+      switch (actualType) {
+        case "object":
+        case "array":
+          suggestion = "use %j for JSON or %i for inspect";
+          break;
+        case "number":
+        case "bigint":
+          suggestion = "use %d for integers or %f for floats";
+          break;
+        case "boolean":
+          suggestion = "use %t for booleans";
+          break;
+        case "function":
+          suggestion = "functions cannot be formatted directly; call it first or use %T for type";
+          break;
+        case "undefined":
+        case "null":
+          suggestion = "use %v for default formatting or check for null/undefined before logging";
+          break;
+        default:
+          suggestion = "use %v for default formatting";
+      }
+      internalError(`%s format specifier received ${actualType} instead of string: ${suggestion}`);
+      return "%s:arg_not_a_string";
+    }
     if (this.flags.precision !== -1) {
       s = s.slice(0, this.flags.precision);
     }
@@ -1017,8 +1045,7 @@ class Printf {
     }
     catch (error) {
       // toJSON threw or some other issue - try to salvage what we can
-      const logger = getLogger();
-      logger.warn(`JSON.stringify failed: ${error instanceof Error ? error.message : String(error)}`);
+      internalWarn(` JSON.stringify failed: ${error instanceof Error ? error.message : String(error)}`);
 
       if (val !== null && typeof val === "object") {
         try {
@@ -1028,14 +1055,14 @@ class Printf {
               safeCopy[key] = (val as Record<string, unknown>)[key];
             }
             catch (propError) {
-              logger.warn(`Failed to access property "${key}": ${propError instanceof Error ? propError.message : String(propError)}`);
+              internalWarn(` Failed to access property "${key}": ${propError instanceof Error ? propError.message : String(propError)}`);
               safeCopy[key] = "[unserializable]";
             }
           }
           return JSON.stringify(safeCopy, replacer);
         }
         catch (fallbackError) {
-          logger.warn(
+          internalWarn(
             `Fallback JSON.stringify also failed: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
           );
         }

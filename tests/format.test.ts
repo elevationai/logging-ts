@@ -219,6 +219,90 @@ Deno.test("error handling: mismatched argument type", () => {
   detachHandler(undefined, mockHandler);
 });
 
+Deno.test("error handling: %s with object logs warning and returns placeholder", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  logger.info("Object: %s", { name: "test" });
+
+  const msg = mockHandler.getLastMessage()!;
+  assertEquals(msg, "Object: %s:arg_not_a_string");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("error handling: %s with number logs warning and returns placeholder", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  logger.info("Number: %s", 42);
+
+  const msg = mockHandler.getLastMessage()!;
+  assertEquals(msg, "Number: %s:arg_not_a_string");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("error handling: %s with boolean logs warning and returns placeholder", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  logger.info("Boolean: %s", true);
+
+  const msg = mockHandler.getLastMessage()!;
+  assertEquals(msg, "Boolean: %s:arg_not_a_string");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("error handling: %s with array logs warning and returns placeholder", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  logger.info("Array: %s", [1, 2, 3]);
+
+  const msg = mockHandler.getLastMessage()!;
+  assertEquals(msg, "Array: %s:arg_not_a_string");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("error handling: %s with undefined logs warning and returns placeholder", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  logger.info("Undefined: %s", undefined);
+
+  const msg = mockHandler.getLastMessage()!;
+  assertEquals(msg, "Undefined: %s:arg_not_a_string");
+
+  detachHandler(undefined, mockHandler);
+});
+
+Deno.test("error handling: %s with null logs warning and returns placeholder", () => {
+  const mockHandler = new MockHandler("DEBUG");
+  const logger = getLogger();
+
+  attachHandler(undefined, mockHandler);
+
+  logger.info("Null: %s", null);
+
+  const msg = mockHandler.getLastMessage()!;
+  assertEquals(msg, "Null: %s:arg_not_a_string");
+
+  detachHandler(undefined, mockHandler);
+});
+
 Deno.test("format methods work with unconfigured logger", () => {
   const mockHandler = new MockHandler("DEBUG");
   const logger = getLogger("unconfigured-module-name");
@@ -454,10 +538,9 @@ Deno.test("lazy evaluation: function that throws is handled gracefully", () => {
   // Should not throw, should log gracefully with error placeholder
   logger.info("Result: %s", throwingFn);
 
-  // Should have logged 2 messages: the error (via logger.error) and the info message
-  assertEquals(mockHandler.messages.length, 2);
-  assertEquals(mockHandler.messages[0], "Error evaluating lazy argument: Intentional test error");
-  assertEquals(mockHandler.messages[1], "Result: [error evaluating lazy argument]");
+  // User's handler receives only the formatted message (warning goes to library logger)
+  assertEquals(mockHandler.messages.length, 1);
+  assertEquals(mockHandler.messages[0], "Result: [error evaluating lazy argument]");
 
   detachHandler(undefined, mockHandler);
 });
